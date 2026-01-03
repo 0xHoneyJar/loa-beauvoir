@@ -354,8 +354,10 @@ See `loa-grimoire/context/CLI-INSTALLATION.md` for full setup guide.
 │   └── SKILL.md               # Instructions
 ├── packs/{name}/              # Skill packs
 │   ├── .license.json          # Pack license
-│   └── skills/                # Bundled skills
-└── .registry-meta.json        # Installation state
+│   ├── manifest.json          # Pack metadata
+│   ├── skills/                # Bundled skills
+│   └── commands/              # Pack commands (auto-symlinked to .claude/commands/)
+└── .constructs-meta.json      # Installation state
 ```
 
 ### Loading Priority
@@ -379,10 +381,18 @@ Local skills always win. Conflicts resolved silently by priority.
 ### CLI Commands
 
 ```bash
+# Loader commands
 constructs-loader.sh list              # Show skills with status
 constructs-loader.sh loadable          # Get loadable skill paths
 constructs-loader.sh validate <dir>    # Validate single skill
 constructs-loader.sh check-updates     # Check for updates
+
+# Installation commands
+constructs-install.sh pack <slug>              # Install pack from registry
+constructs-install.sh skill <vendor/slug>      # Install individual skill
+constructs-install.sh uninstall pack <slug>    # Remove a pack
+constructs-install.sh uninstall skill <slug>   # Remove a skill
+constructs-install.sh link-commands <slug|all> # Re-link pack commands
 ```
 
 ### Configuration
@@ -400,6 +410,7 @@ registry:
 - `LOA_OFFLINE_GRACE_HOURS` - Grace period
 - `LOA_REGISTRY_ENABLED` - Master toggle
 - `LOA_OFFLINE=1` - Force offline mode
+- `LOA_CONSTRUCTS_API_KEY` - API key for pack/skill installation
 
 **Protocol**: See `.claude/protocols/constructs-integration.md`
 
