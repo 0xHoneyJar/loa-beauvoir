@@ -5,11 +5,563 @@ All notable changes to Loa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.15.0] - 2026-01-17
+## [0.19.0] - 2026-01-19
 
 ### Why This Release
 
-This release removes the `/setup` phase entirely, allowing users to start with `/plan-and-analyze` immediately after cloning. THJ membership is now detected via the `LOA_CONSTRUCTS_API_KEY` environment variable instead of a marker file.
+The **Documentation Coherence** release enforces atomic per-task documentation validation:
+
+1. **Atomic Enforcement**: Every task ships with its documentation - no batching at sprint end
+2. **Integrated Workflow**: documentation-coherence subagent runs during review, audit, and deploy phases
+3. **Clear Blocking Rules**: CHANGELOG missing = blocked; new command without CLAUDE.md = blocked
+
+### Added
+
+#### documentation-coherence Subagent (Sprint 1)
+
+- **`.claude/subagents/documentation-coherence.md`** - Per-task documentation validation
+  - Task type detection: new feature, bug fix, new command, API change, refactor, security fix, config change
+  - Per-task documentation requirements matrix
+  - Severity levels: COHERENT, NEEDS_UPDATE, ACTION_REQUIRED
+  - Escalation rules (missing CHANGELOG → ACTION_REQUIRED)
+  - Task-level and sprint-level report formats
+  - Blocking behavior per trigger documented
+
+#### /validate docs Command (Sprint 1)
+
+- **`/validate docs`** - Run documentation-coherence on demand
+  - `/validate docs --sprint` - Sprint-level verification
+  - `/validate docs --task N` - Specific task verification
+  - Advisory (non-blocking) when run manually
+  - Produces reports at `grimoires/loa/a2a/subagent-reports/`
+
+#### Skill Integrations (Sprint 2)
+
+- **reviewing-code skill**: New "Documentation Verification (Required)" section
+  - Pre-review check for documentation-coherence report
+  - Documentation checklist with blocking criteria
+  - "Cannot Approve If" conditions
+  - Approval/rejection language templates
+
+- **auditing-security skill**: New "Documentation Audit (Required)" section
+  - Sprint documentation coverage verification
+  - Security-specific documentation checks (SECURITY.md, auth docs, API docs)
+  - Red flags for secrets/internal info in docs
+  - Audit checklist additions
+
+- **deploying-infrastructure skill**: New "Release Documentation Verification (Required)" section
+  - Pre-deployment documentation checklist
+  - CHANGELOG verification (version set, all tasks, breaking changes)
+  - README verification (features, quick start, links)
+  - Deployment and operational documentation requirements
+  - "Cannot Deploy If" conditions
+
+#### Tests (Sprint 1-2)
+
+- `tests/unit/documentation-coherence.bats` - 54 unit tests
+  - Task type detection, CHANGELOG verification, severity levels
+  - Report format generation, escalation rules
+- `tests/integration/documentation-coherence.bats` - 31 integration tests
+  - Skill integrations, cross-references, blocking behavior
+
+#### Context Cleanup Script
+
+- **`.claude/scripts/cleanup-context.sh`** - Discovery context archive and cleanup
+  - **Archives first**: Copies context to `{archive-path}/context/` before cleaning
+  - Automatically called by `/run sprint-plan` on completion
+  - Smart archive location: uses ledger.json or finds most recent archive
+  - Supports `--dry-run`, `--verbose`, and `--no-archive` options
+  - Preserves valuable discovery context while ensuring fresh start
+
+#### v0.8.0 Spec Compliance (Skills Housekeeping)
+
+- **`.claude/protocols/verification-loops.md`** - New protocol (P1.1)
+  - 7-level verification hierarchy (tests → type check → lint → build → integration → E2E → manual)
+  - Agent responsibilities for implementing-tasks, reviewing-code, deploying-infrastructure
+  - Minimum viable verification requirements
+  - Integration with quality gates workflow
+
+- **implementing-tasks skill**: Task-Level Planning section (P1.2)
+  - Complex task criteria (3+ files, architectural decisions, >2 hours)
+  - Task plan template with Objective, Approach, Files, Dependencies, Risks, Verification
+  - Plan review requirements before implementing
+  - Plans stored at `grimoires/loa/a2a/sprint-N/task-{N}-plan.md`
+
+- **reviewing-code skill**: Complexity Review section (P1.3)
+  - Function complexity checks (>50 lines, >5 params, nesting >3)
+  - Code duplication detection (>3 occurrences)
+  - Dependency analysis (circular imports, unused)
+  - Naming quality assessment
+  - Dead code detection
+  - Blocking vs non-blocking complexity verdicts
+
+- **deploying-infrastructure skill**: E2E Verification section (P1.4)
+  - Pre-deployment verification matrix (tests, build, type check, security scan)
+  - Infrastructure verification checklist
+  - Staging environment test requirements
+  - E2E test categories (happy path, error handling, auth, data integrity)
+  - Verification report template for deployment reports
+  - Blocking conditions for deployment
+
+- **PROCESS.md**: Context Hygiene section (P2.1)
+  - Loading priority table (NOTES.md → sprint files → PRD/SDD → source → tests)
+  - Grep vs skim decision guidance
+  - When to request file tree
+  - Context budget awareness (Green/Yellow/Red zones)
+  - Tool result clearing examples
+
+- **PROCESS.md**: Long-Running Task Guidance (P2.3)
+  - Session handoff protocol with NOTES.md updates
+  - Checkpoint creation examples
+  - Multi-file refactoring tracking patterns
+  - Avoiding context exhaustion (>2 hour tasks)
+  - Recovery after interruption steps
+
+- **CONTRIBUTING.md**: Command Optimization section (P3.1)
+  - Parallel call patterns with good/bad examples
+  - Sequential patterns for dependencies
+  - Command invocation examples
+  - Pre-flight check patterns
+  - Context loading optimization
+  - Error message quality guidelines
+  - Command documentation requirements
+
+### Changed
+
+- **CLAUDE.md**: Added documentation-coherence to subagents table
+- **CLAUDE.md**: Added `/validate docs` to commands table
+- **/validate command**: Now includes docs subcommand with options
+
+### PRD/SDD References
+
+- PRD: `grimoires/loa/prd.md` (cycle-006)
+- SDD: `grimoires/loa/sdd.md` (cycle-006)
+
+---
+
+## [0.18.0] - 2026-01-19
+
+### Why This Release
+
+The **Run Mode** release enables autonomous sprint execution with human-in-the-loop shifted to PR review:
+
+1. **Autonomous Execution**: `/run sprint-N` executes implement → review → audit cycles until all pass
+2. **Safety Controls**: 4-level defense (ICE, Circuit Breaker, Opt-In, Visibility) prevents runaway execution
+3. **Multi-Sprint Support**: `/run sprint-plan` executes entire sprint plans with single PR
+4. **Resumable State**: Checkpoint-based execution allows halt and resume from any point
+
+### Added
+
+#### Run Mode Commands (Sprint 2-3)
+
+- **`/run sprint-N`** - Autonomous single sprint execution
+  - Cycles through implement → review → audit until all pass
+  - Options: `--max-cycles`, `--timeout`, `--branch`, `--dry-run`
+  - Creates draft PR on completion
+  - Never merges or pushes to protected branches
+
+- **`/run sprint-plan`** - Multi-sprint execution
+  - Three-tier sprint discovery (sprint.md → ledger.json → directories)
+  - Options: `--from N`, `--to N` for partial execution
+  - Single PR for entire plan
+  - Graceful failure handling with incomplete PR
+
+- **`/run-status`** - Progress display
+  - Box-formatted run info, metrics, circuit breaker status
+  - Options: `--json`, `--verbose`
+  - Sprint plan progress tree for multi-sprint runs
+
+- **`/run-halt`** - Graceful stop
+  - Completes current phase before stopping
+  - Creates draft PR marked `[INCOMPLETE]`
+  - Options: `--force`, `--reason "..."`
+
+- **`/run-resume`** - Continue from checkpoint
+  - Branch divergence detection
+  - Circuit breaker state check
+  - Options: `--reset-ice`, `--force`
+
+#### Safety Infrastructure (Sprint 1)
+
+- **`.claude/scripts/run-mode-ice.sh`** - Git operation safety wrapper
+  - Blocks push to protected branches (main, master, staging, etc.)
+  - Blocks all merge operations
+  - Blocks branch deletion
+  - Enforces draft-only PR creation
+
+- **`.claude/scripts/check-permissions.sh`** - Permission validation
+  - Verifies required Claude Code permissions
+  - Clear error messages for missing permissions
+
+- **`.claude/protocols/run-mode.md`** - Safety protocol
+  - 4-level defense in depth documentation
+  - State machine transitions
+  - Circuit breaker triggers and thresholds
+
+#### Circuit Breaker (Sprint 2)
+
+- **Same Issue Detection**: Hash-based comparison, halts after 3 repetitions
+- **No Progress Detection**: Halts after 5 cycles without file changes
+- **Cycle Limit**: Halts after configurable max cycles (default 20)
+- **Timeout**: Halts after configurable runtime (default 8 hours)
+- **State**: CLOSED (normal) → OPEN (halted), reset with `--reset-ice`
+
+#### State Management (Sprint 2)
+
+- **`.run/state.json`** - Run progress, metrics, cycle history
+- **`.run/circuit-breaker.json`** - Trigger counts, trip history
+- **`.run/deleted-files.log`** - Tracked deletions for PR body
+- **`.run/rate-limit.json`** - Hour boundary API call tracking
+
+#### Skill & Configuration (Sprint 4)
+
+- **`.claude/skills/run-mode/`** - Run Mode skill definition
+  - `index.yaml`: Triggers, inputs, outputs, safety requirements
+  - `SKILL.md`: KERNEL instructions for autonomous execution
+
+- **`.loa.config.yaml`**: `run_mode` section
+  - `enabled`: Master toggle (defaults to `false` for safety)
+  - `defaults.max_cycles`: Maximum cycles before halt
+  - `defaults.timeout_hours`: Maximum runtime
+  - `rate_limiting.calls_per_hour`: API exhaustion prevention
+  - `circuit_breaker.same_issue_threshold`: Repetition tolerance
+  - `circuit_breaker.no_progress_threshold`: Empty cycle tolerance
+  - `git.branch_prefix`: Auto-created branch prefix
+  - `git.create_draft_pr`: Always true (enforced)
+
+#### Tests (Sprint 1-2)
+
+- `tests/unit/run-mode-ice.bats`: ICE wrapper safety tests
+- `tests/unit/circuit-breaker.bats`: Circuit breaker trigger tests
+- `tests/integration/run-mode.bats`: End-to-end Run Mode tests
+
+#### Permission Audit
+
+- **`.claude/scripts/permission-audit.sh`** - HITL permission request logging
+  - Logs all commands that required human approval
+  - `view`: Display permission request log
+  - `analyze`: Show patterns and frequency
+  - `suggest`: Recommend permissions to add to settings.json
+  - `clear`: Clear the log
+
+- **`/permission-audit`** command for easy access
+
+- **`PermissionRequest` hook** in settings.json enables automatic logging
+
+### Changed
+
+- **CLAUDE.md**:
+  - Updated skill count from 8 to 9
+  - Added Run Mode section with commands, safety model, configuration
+  - Added `run-mode` to skills table
+  - Added Run Mode commands to workflow commands list
+
+- **`.gitignore`**: Added `.run/` directory (Run Mode state)
+- **`.gitignore`**: Added `permission-requests.jsonl` (user-specific audit log)
+- **`.claude/settings.json`**: Updated to new Claude Code v2.1.12+ hooks format
+- **`.claude/settings.json`**: Added `PermissionRequest` hook for audit logging
+
+### Security
+
+- **Explicit Opt-In**: Run Mode disabled by default
+- **ICE Layer**: All git operations wrapped with safety checks
+- **Draft PRs Only**: Never creates ready-for-review PRs
+- **Protected Branches**: Push to main/master/staging always blocked
+- **Merge Block**: Merge operations completely disabled
+- **Deleted File Tracking**: All deletions prominently displayed in PR
+
+### PRD/SDD References
+
+- PRD: `grimoires/loa/prd.md` (cycle-005)
+- SDD: `grimoires/loa/sdd.md` (cycle-005)
+
+---
+
+## [0.17.0] - 2026-01-19
+
+### Why This Release
+
+The **Continuous Learning Skill** release enables Loa agents to build compound knowledge over time:
+
+1. **Skill Extraction**: Agents detect non-obvious discoveries during implementation and extract them into reusable skills
+2. **Quality Gates**: Four gates (Discovery Depth, Reusability, Trigger Clarity, Verification) prevent low-value extraction
+3. **Lifecycle Management**: `/retrospective` and `/skill-audit` commands for approval, rejection, and pruning workflows
+
+**Research Foundation**: Based on Voyager (Wang et al., 2023), CASCADE (2024), Reflexion (Shinn et al., 2023), and SEAgent (2025).
+
+### Added
+
+#### Continuous Learning Skill (Sprint 1-2)
+
+- **`.claude/skills/continuous-learning/`** - Core skill definition
+  - `index.yaml`: Skill metadata with triggers and phase activation
+  - `SKILL.md`: KERNEL instructions for discovery detection and extraction
+  - `resources/skill-template.md`: Template for extracted skills
+  - `resources/examples/nats-jetstream-consumer-durable.md`: Example skill
+
+- **`.claude/protocols/continuous-learning.md`** - Evaluation protocol
+  - Four quality gates with pass/fail criteria
+  - Phase gating table (enabled during implement/review/audit/deploy)
+  - Zone compliance rules (State Zone only for extracted skills)
+  - Trajectory logging format
+
+- **State Zone directories** for skill lifecycle:
+  - `grimoires/loa/skills/`: Active extracted skills
+  - `grimoires/loa/skills-pending/`: Skills awaiting approval
+  - `grimoires/loa/skills-archived/`: Rejected or pruned skills
+
+#### Commands (Sprint 3)
+
+- **`/retrospective`** - Manual skill extraction
+  - Five-step workflow: Session Analysis → Quality Gates → Cross-Reference → Extract → Summary
+  - `--scope <agent>`: Limit extraction to specific agent context
+  - `--force`: Skip quality gate prompts
+  - Example conversation flow with output formats
+
+- **`/skill-audit`** - Lifecycle management
+  - `--pending`: List skills awaiting approval
+  - `--approve <name>`: Move skill to active
+  - `--reject <name>`: Archive skill with reason
+  - `--prune`: Review for low-value skills (>90 days, <2 matches)
+  - `--stats`: Show skill usage statistics
+
+#### Configuration & Documentation (Sprint 4)
+
+- **`.loa.config.yaml`**: `continuous_learning` section
+  - `enabled`: Master toggle
+  - `auto_extract`: Enable/disable automatic extraction
+  - `require_approval`: Skip or require pending workflow
+  - `quality_gates.min_discovery_depth`: 1-3 threshold
+  - `pruning.prune_after_days`: Age-based archive threshold
+  - `pruning.prune_min_matches`: Usage-based retention threshold
+
+- **CLAUDE.md**: New "Continuous Learning Skill (v0.17.0)" section
+  - Command reference table
+  - Quality gates documentation
+  - Phase activation table
+  - Configuration examples
+
+#### Tests (Sprint 4)
+
+- `tests/unit/quality-gates.bats`: Quality gate logic validation
+- `tests/unit/zone-compliance.bats`: State Zone write enforcement
+- `tests/integration/retrospective.bats`: End-to-end extraction flow
+- `tests/integration/skill-audit.bats`: Lifecycle management flows
+
+### Changed
+
+- **CLAUDE.md**: Added `/retrospective` and `/skill-audit` to ad-hoc commands
+- **Document flow diagram**: Now includes extracted skills in `grimoires/loa/`
+
+### PRD/SDD References
+
+- PRD: `grimoires/loa/prd.md` (cycle-004)
+- SDD: `grimoires/loa/sdd.md` (cycle-004)
+
+---
+
+## [0.16.0] - 2026-01-18
+
+### Why This Release
+
+The **Loa Orchestration** release delivers three key developer experience improvements:
+
+1. **Frictionless Permissions**: 150+ pre-approved commands eliminate permission prompts for standard development operations (npm, git, docker, etc.)
+
+2. **Intelligent Subagents**: Three validation subagents (architecture-validator, security-scanner, test-adequacy-reviewer) provide automated quality gates
+
+3. **Enhanced Agent Memory**: Structured NOTES.md protocol with 6 required sections ensures consistent context preservation across sessions
+
+### Added
+
+#### Frictionless Permissions (Sprint 1)
+
+- **150+ pre-allowed patterns** in `.claude/settings.json`
+  - Package managers: npm, pnpm, yarn, bun, cargo, pip, poetry, gem, go
+  - Git operations: add, commit, push, pull, branch, merge, rebase, stash
+  - Containers: docker, docker-compose, kubectl, helm
+  - Runtimes: node, python, ruby, java, go, rustc
+  - Testing: jest, vitest, pytest, mocha, bats
+  - Build tools: webpack, vite, esbuild, tsc, swc
+  - Deploy CLIs: vercel, fly, railway, aws, gcloud
+
+- **Security deny list**
+  - Privilege escalation blocked: sudo, su, doas
+  - Destructive operations: rm -rf /, fork bombs
+  - Remote code execution: curl|bash, wget|sh
+  - Device attacks: /dev/sda, dd, mkfs
+
+- **Documentation**: New "Frictionless Permissions" section in INSTALLATION.md
+
+#### Intelligent Subagents (Sprints 2-3)
+
+- **`.claude/subagents/` directory** with three validation agents:
+  - `architecture-validator.md`: SDD compliance, structural and naming checks
+  - `security-scanner.md`: OWASP Top 10, input validation, auth/authz
+  - `test-adequacy-reviewer.md`: Coverage quality, test smells, missing tests
+
+- **`/validate` command**
+  - `/validate` - Run all subagents
+  - `/validate architecture|security|tests` - Run specific subagent
+  - `/validate security src/auth` - Scoped validation
+
+- **Subagent Invocation Protocol** (`.claude/protocols/subagent-invocation.md`)
+  - Scope determination: explicit > sprint context > git diff
+  - Output location: `grimoires/loa/a2a/subagent-reports/`
+  - Quality gate integration with blocking verdicts
+
+- **`reviewing-code` skill updated**: Checks subagent reports, blocks on CRITICAL/HIGH
+
+#### Enhanced NOTES.md Protocol (Sprint 4)
+
+- **Required sections defined** (`.claude/protocols/structured-memory.md`):
+  - Current Focus: Active task, status, blocked by, next action
+  - Session Log: Append-only event history table
+  - Decisions: Architecture/implementation decisions with rationale
+  - Blockers: Checkbox list with [RESOLVED] marking
+  - Technical Debt: ID, description, severity, found by, sprint
+  - Learnings: Project-specific knowledge
+  - Session Continuity: Recovery anchor (v0.9.0)
+
+- **Agent Discipline events**: Session start, decision made, blocker hit/resolved, session end, mistake discovered
+
+- **NOTES.md template** (`.claude/templates/NOTES.md.template`)
+
+#### MCP Configuration Examples (Sprint 5)
+
+- **`.claude/mcp-examples/` directory** for power users:
+  - `slack.json` - HIGH risk (read + write)
+  - `github.json` - MEDIUM risk (read + write)
+  - `sentry.json` - LOW risk (read only)
+  - `postgres.json` - CRITICAL risk (configurable)
+
+- **Security documentation**: Required scopes, setup steps, risk levels, recommendations
+
+### Changed
+
+- **`reviewing-code` skill**: Now checks `a2a/subagent-reports/` for blocking verdicts
+- **`structured-memory.md` protocol**: Enhanced with v0.16.0 required sections and agent discipline
+- **CLAUDE.md**: New sections for Intelligent Subagents and MCP examples
+- **README.md**: Updated repository structure, frictionless permissions note
+
+### Test Coverage
+
+New tests added:
+- `tests/unit/settings-permissions.bats`: Permission patterns validation
+- `tests/unit/subagent-loader.bats`: Subagent loading and YAML validation
+- `tests/unit/subagent-reports.bats`: Security scanner and test adequacy
+- `tests/unit/notes-template.bats`: NOTES.md template sections
+- `tests/integration/validate-flow.bats`: End-to-end /validate command
+
+### Security
+
+All 5 sprints passed security audit:
+- No hardcoded credentials in any file
+- All scripts use `set -euo pipefail`
+- Deny list prevents dangerous commands
+- MCP examples use environment variable placeholders only
+
+---
+
+## [0.15.0] - 2026-01-18
+
+### Why This Release
+
+This release delivers two major feature cycles:
+
+1. **Sprint Ledger** (Cycle 1): Global sprint numbering across multiple development cycles, preventing directory collisions when running `/plan-and-analyze` multiple times.
+
+2. **RLM Context Improvements** (Cycle 2): Probe-before-load pattern achieving 29.3% token reduction, based on MIT CSAIL research on Recursive Language Models.
+
+Additionally, this release removes the `/setup` phase, allowing users to start immediately with `/plan-and-analyze`.
+
+### Added
+
+#### Sprint Ledger (v0.13.0 features)
+
+- **`/ledger` command**: View current ledger status and sprint history
+- **`/archive-cycle "label"` command**: Archive completed cycles with full artifact preservation
+- **`ledger-lib.sh` script**: Core ledger functions (init, create_cycle, add_sprint, resolve_sprint)
+- **`validate-sprint-id.sh` script**: Resolves local sprint IDs (sprint-1) to global IDs (sprint-7)
+- **Cycle archiving**: Preserves PRD, SDD, sprint.md and all a2a artifacts to `grimoires/loa/archive/`
+- **Backward compatibility**: Projects without ledger work exactly as before (legacy mode)
+
+#### RLM Context Improvements (v0.15.0 features)
+
+- **Probe-Before-Load Pattern** (`context-manager.sh`)
+  - `probe <file|dir> --json`: Lightweight metadata extraction without loading content
+  - `should-load <file> --json`: Decision engine for selective loading
+  - Achieves **29.3% token reduction** with only **0.6% overhead**
+
+- **Schema Validator Assertions** (`schema-validator.sh`)
+  - `assert <file> --schema prd --json`: Programmatic validation mode
+  - Field existence, enum validation, semver format, array checks
+  - Replaces re-prompting with code-based verification
+
+- **RLM Benchmark Framework** (`rlm-benchmark.sh`)
+  - `run --target <dir> --json`: Compare current vs RLM loading patterns
+  - `baseline`: Capture metrics for future comparison
+  - `compare`: Delta analysis against baseline
+  - `report`: Generate markdown report with methodology and results
+
+- **Trajectory logging**: All new operations logged to `grimoires/loa/a2a/trajectory/`
+
+### Changed
+
+- **`/plan-and-analyze`**: Creates ledger and cycle automatically on first run
+- **`/sprint-plan`**: Registers sprints in ledger with global IDs
+- **`/implement sprint-N`**: Resolves local ID to global directory
+- **`/review-sprint sprint-N`**: Resolves local ID to global directory
+- **`/audit-sprint sprint-N`**: Resolves ID and updates completion status in ledger
+- **`/update` renamed to `/update-loa`**: Avoids conflict with Claude Code built-in command
+
+### Configuration
+
+New options in `.loa.config.yaml`:
+
+```yaml
+context_management:
+  probe_before_load: true
+  max_eager_load_lines: 500
+  relevance_keywords: ["export", "class", "interface", "function"]
+  exclude_patterns: ["*.test.ts", "*.spec.ts", "node_modules/**"]
+```
+
+### Test Coverage
+
+| Category | Count |
+|----------|-------|
+| Unit Tests | 652 |
+| Integration Tests | 149 |
+| Edge Case Tests | 86 |
+| **Total** | **887** |
+
+New tests added:
+- 100+ Sprint Ledger tests (Cycle 1)
+- 120+ RLM Context tests (Cycle 2)
+
+### Security
+
+All 12 sprints across both cycles passed security audit:
+- No hardcoded credentials
+- Shell safety (`set -euo pipefail`)
+- Input validation
+- No command injection
+- Test isolation
+- Path traversal prevention
+
+### Documentation
+
+- `CLAUDE.md`: Sprint Ledger and RLM Benchmark sections
+- `grimoires/pub/research/rlm-release-notes.md`: Release notes
+- `grimoires/pub/research/benchmarks/final-report.md`: Benchmark results
+- `grimoires/pub/research/rlm-recursive-language-models.md`: Research analysis
+
+---
+
+### Previous 0.15.0 Changes (Setup Removal)
+
+This release also removes the `/setup` phase entirely, allowing users to start with `/plan-and-analyze` immediately after cloning. THJ membership is now detected via the `LOA_CONSTRUCTS_API_KEY` environment variable instead of a marker file.
 
 ### ⚠️ Breaking Changes
 

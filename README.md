@@ -1,6 +1,6 @@
 # Loa
 
-[![Version](https://img.shields.io/badge/version-0.15.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.19.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE.md)
 
 > *"The Loa are pragmatic entities... They're not worshipped for salvation—they're worked with for practical results."*
@@ -41,6 +41,8 @@ claude
 # Begin workflow (no setup required!)
 /plan-and-analyze
 ```
+
+**Frictionless Permissions** (v0.16.0): Pre-approved permissions for 150+ standard development commands (npm, git, docker, etc.) mean zero permission prompts during normal development.
 
 ### Clone Template
 
@@ -90,7 +92,7 @@ Loa uses a **managed scaffolding** architecture inspired by AWS Projen, Copier, 
 | `/audit` | Full codebase security audit |
 | `/audit-deployment` | Infrastructure security review |
 | `/translate @doc for audience` | Executive summaries |
-| `/update` | Pull framework updates |
+| `/update-loa` | Pull framework updates |
 | `/contribute` | Create upstream PR |
 
 ## The Agents (The Loa)
@@ -182,6 +184,23 @@ When ck is installed, Loa uses it for:
 - **Self-Healing**: Automatic State Zone recovery from git history
 - **Audit Trail**: Complete trajectory logging with timestamped handoffs
 
+### Sprint Ledger (v0.13.0)
+
+Global sprint numbering across multiple development cycles:
+
+```bash
+/plan-and-analyze     # Creates ledger + cycle-001
+# ... complete sprints ...
+/archive-cycle "MVP"  # Archive completed cycle
+/plan-and-analyze     # Start cycle-002, sprint-1 → global sprint-4
+```
+
+- **Global IDs**: Sprint-1 in cycle-2 uses `a2a/sprint-4/` (no collisions)
+- **Backward Compatible**: Works without ledger (legacy mode)
+- **Audit Trail**: Complete history via `/ledger history`
+
+See **[CLAUDE.md](CLAUDE.md#sprint-ledger-v0130)** for full documentation.
+
 ### Two Quality Gates
 
 1. **Code Review**: Tech lead reviews until "All good"
@@ -201,13 +220,23 @@ persistence_mode: stealth
 .claude/                        # System Zone (framework-managed)
 ├── skills/                     # 8 agent skills
 ├── commands/                   # Slash commands
+├── subagents/                  # Intelligent validation subagents (v0.16.0)
+│   ├── architecture-validator.md # SDD compliance checking
+│   ├── security-scanner.md    # OWASP Top 10 detection
+│   └── test-adequacy-reviewer.md # Test quality assessment
+├── mcp-examples/               # MCP configuration examples (v0.16.0)
+│   ├── README.md              # Security warnings and setup
+│   ├── slack.json, github.json, sentry.json, postgres.json
+├── templates/                  # Initializable templates (v0.16.0)
+│   └── NOTES.md.template      # Structured agentic memory
 ├── protocols/                  # Framework protocols
 │   ├── session-continuity.md   # Lossless Ledger Protocol
 │   ├── grounding-enforcement.md # Grounding ratio enforcement
 │   ├── synthesis-checkpoint.md # Pre-/clear checkpoint
 │   ├── attention-budget.md     # Token budget management
 │   ├── jit-retrieval.md        # Just-in-time code retrieval
-│   ├── structured-memory.md    # NOTES.md protocol
+│   ├── structured-memory.md    # NOTES.md protocol (v0.16.0)
+│   ├── subagent-invocation.md  # Subagent invocation protocol (v0.16.0)
 │   ├── trajectory-evaluation.md # ADK-style evaluation
 │   └── change-validation.md    # Pre-implementation validation
 ├── scripts/                    # Helper scripts
@@ -225,11 +254,17 @@ persistence_mode: stealth
 grimoires/                      # State Zone (project memory)
 ├── loa/                        # Private project state (gitignored)
 │   ├── NOTES.md                # Structured agentic memory
+│   ├── ledger.json             # Sprint Ledger (global numbering)
 │   ├── context/                # User-provided context
 │   ├── reality/                # Code extraction results (/ride)
+│   ├── archive/                # Archived development cycles
+│   │   └── YYYY-MM-DD-slug/    # Dated cycle archives
 │   ├── prd.md, sdd.md, sprint.md  # Planning docs
 │   ├── a2a/                    # Agent communication
 │   │   ├── trajectory/         # Agent reasoning logs
+│   │   ├── audits/             # Codebase audit reports (/audit)
+│   │   │   └── YYYY-MM-DD/     # Dated audit directories
+│   │   ├── subagent-reports/   # /validate output (v0.16.0)
 │   │   └── sprint-N/           # Per-sprint feedback
 │   └── deployment/             # Infrastructure docs
 └── pub/                        # Public documents (git-tracked)
