@@ -140,7 +140,7 @@ See **[CLAUDE.md](CLAUDE.md#run-mode-v0180)** for full documentation.
 
 ### Simstim: Telegram Bridge (v1.3.0)
 
-Remote monitoring and control of Loa sessions via Telegram:
+Remote monitoring and control of Loa sessions via Telegram. Ported from [takopi.dev](https://takopi.dev/) and adapted for Loa workflows:
 
 ```bash
 # Install Simstim

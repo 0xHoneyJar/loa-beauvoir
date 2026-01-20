@@ -2,7 +2,7 @@
 
 > Telegram Bridge for Remote Loa (Claude Code) Monitoring and Control
 
-Simstim provides a mobile-friendly interface for monitoring and controlling your Loa (Claude Code) sessions remotely via Telegram. Named after the neural interface technology in William Gibson's Sprawl trilogy, Simstim lets you experience your AI agent workflows from anywhere.
+Simstim provides a mobile-friendly interface for monitoring and controlling your Loa (Claude Code) sessions remotely via Telegram. **Ported from [takopi.dev](https://takopi.dev/)** and adapted for Loa workflows. Named after the neural interface technology in William Gibson's Sprawl trilogy, Simstim lets you experience your AI agent workflows from anywhere.
 
 ## Features
 
