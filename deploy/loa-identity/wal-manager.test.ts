@@ -215,4 +215,21 @@ describe('WALManager', () => {
       expect(entries[0].ts).toBeLessThanOrEqual(after);
     });
   });
+
+  describe('security', () => {
+    it('should reject path traversal attempts', async () => {
+      // Attempt various path traversal patterns
+      await expect(walManager.write('../escape.md', 'malicious')).rejects.toThrow('traversal not allowed');
+      await expect(walManager.write('loa/../../../etc/passwd', 'malicious')).rejects.toThrow('traversal not allowed');
+      await expect(walManager.write('..', 'malicious')).rejects.toThrow('traversal not allowed');
+      await expect(walManager.delete('../escape.md')).rejects.toThrow('traversal not allowed');
+      await expect(walManager.mkdir('../escape')).rejects.toThrow('traversal not allowed');
+    });
+
+    it('should allow valid nested paths', async () => {
+      // These should work fine
+      await expect(walManager.write('loa/deep/nested/file.md', 'valid')).resolves.not.toThrow();
+      await expect(walManager.write('.beads/task.json', 'valid')).resolves.not.toThrow();
+    });
+  });
 });

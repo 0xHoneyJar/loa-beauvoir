@@ -501,8 +501,14 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
 
   /**
    * Resolve a relative path to full path
+   * @throws Error if path traversal is detected
    */
   private resolveFullPath(relativePath: string): string {
+    // Security: Defense-in-depth guard against path traversal
+    if (relativePath.includes('..')) {
+      throw new Error(`Invalid path: traversal not allowed (${relativePath})`);
+    }
+
     if (relativePath.startsWith('.beads/')) {
       return path.join(BEADS_DIR, relativePath.replace('.beads/', ''));
     }
