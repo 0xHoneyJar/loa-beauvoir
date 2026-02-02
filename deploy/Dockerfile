@@ -2,13 +2,16 @@
 # Loa Cloud Stack - Container Image
 # =============================================================================
 # Layers:
-#   L0: Loa System Zone (copied from .claude/)
+#   L0: Loa System Zone (fetched from GitHub at build time)
 #   L1: Devcontainer runtime patterns (tools, sandboxing - NOT the image)
 #   L2: Moltworker infrastructure (R2, channels, Workers proxy)
 #   L3: Loa identity layer (this Dockerfile + start-loa.sh)
 #
 # Identity Guarantee: Moltworker's AGENTS.md is NEVER loaded.
 # The CLAUDE_CONFIG_DIR points exclusively to Loa's System Zone.
+#
+# Build Context: This Dockerfile is built with deploy/ as the context.
+# Files from the repo root are fetched via git clone during build.
 # =============================================================================
 
 FROM docker.io/cloudflare/sandbox:0.7.0
@@ -58,6 +61,7 @@ RUN mkdir -p \
     /workspace \
     /workspace/.claude \
     /workspace/grimoires/loa \
+    /workspace/deploy/loa-identity \
     /data/moltbot \
     /data/wal \
     /root/.openclaw
@@ -66,19 +70,19 @@ RUN mkdir -p \
 # Stage 3: Loa Identity Layer
 # -----------------------------------------------------------------------------
 
-# Copy Loa System Zone (skills, protocols, scripts)
-# This is the ONLY identity source - moltworker's AGENTS.md is never used
-COPY .claude/ /workspace/.claude/
+# Fetch Loa framework and identity files from GitHub
+# This ensures we always get the latest from the repo
+ARG LOA_REPO=https://github.com/0xHoneyJar/loa-beauvoir.git
+ARG LOA_BRANCH=main
+RUN git clone --depth 1 --branch ${LOA_BRANCH} ${LOA_REPO} /tmp/loa-repo \
+    && cp -r /tmp/loa-repo/.claude/* /workspace/.claude/ \
+    && cp -r /tmp/loa-repo/grimoires/* /workspace/grimoires/ \
+    && cp /tmp/loa-repo/.loa-version.json /workspace/ 2>/dev/null || echo '{"framework_version":"1.16.0"}' > /workspace/.loa-version.json \
+    && rm -rf /tmp/loa-repo
 
-# Copy Loa State Zone template (will be overlaid from R2 at runtime)
-COPY grimoires/ /workspace/grimoires/
-
-# Copy Loa version manifest
-COPY .loa-version.json /workspace/
-
-# Copy deployment configuration
-COPY deploy/start-loa.sh /usr/local/bin/start-loa.sh
-COPY deploy/loa-identity/ /workspace/deploy/loa-identity/
+# Copy deployment configuration from build context (deploy/ directory)
+COPY start-loa.sh /usr/local/bin/start-loa.sh
+COPY loa-identity/ /workspace/deploy/loa-identity/
 
 RUN chmod +x /usr/local/bin/start-loa.sh
 

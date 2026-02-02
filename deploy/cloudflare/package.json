@@ -21,6 +21,6 @@
     "r2:list": "wrangler r2 bucket list"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.61.1"
   }
 }
