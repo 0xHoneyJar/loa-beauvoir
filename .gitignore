@@ -200,3 +200,24 @@ app/package.json
 app/package-lock.json
 app/tsconfig.json
 app/ecosystem.config.js
+
+# =============================================================================
+# LOA CLOUD STACK DEPLOY EXCLUSIONS
+# =============================================================================
+
+# Deploy build artifacts
+deploy/.wrangler/
+deploy/cloudflare/.wrangler/
+deploy/dist/
+
+# Deploy node modules (separate from main project)
+deploy/node_modules/
+deploy/cloudflare/node_modules/
+
+# Local development overrides
+deploy/.env
+deploy/.env.local
+deploy/cloudflare/.dev.vars
+
+# WAL data (local container state)
+deploy/data/
