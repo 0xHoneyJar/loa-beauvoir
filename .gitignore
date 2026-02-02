@@ -82,6 +82,9 @@ USER.md
 # Claude Code config (local workspace settings, prompts, scratchpad)
 .claude/config/
 
+# GPT review context (dynamically generated based on config)
+.claude/context/gpt-review-active.md
+
 # Local settings overrides (user-specific feedback trace configuration)
 .claude/settings.local.json
 
