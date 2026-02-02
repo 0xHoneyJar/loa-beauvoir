@@ -51,7 +51,7 @@ RUN npm install -g pnpm@10
 # -----------------------------------------------------------------------------
 
 # Install OpenClaw (formerly clawdbot) - pinned version for reproducibility
-ARG OPENCLAW_VERSION=2026.2.1
+ARG OPENCLAW_VERSION=2026.1.30
 RUN npm install -g openclaw@${OPENCLAW_VERSION} \
     && openclaw --version
 
