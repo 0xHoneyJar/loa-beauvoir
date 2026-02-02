@@ -1,0 +1,16 @@
+{
+  "devcontainer": {
+    "remote": "https://github.com/trailofbits/claude-code-devcontainer",
+    "commit": "96e3ca270f97df146b622b1beae89c5dcee36941",
+    "updated": "2026-02-02",
+    "tested": true,
+    "notes": "Initial import - Ubuntu 24.04, Node 20, Claude Code sandbox"
+  },
+  "moltworker": {
+    "remote": "https://github.com/cloudflare/moltworker",
+    "commit": "7b0ba7811b7558fdc158cb53cd0a0e4327e9a429",
+    "updated": "2026-02-02",
+    "tested": true,
+    "notes": "Initial import - Cloudflare Workers container pattern"
+  }
+}
