@@ -6,6 +6,7 @@
 #   L1: Devcontainer runtime patterns (tools, sandboxing - NOT the image)
 #   L2: Moltworker infrastructure (R2, channels, Workers proxy)
 #   L3: Loa identity layer (this Dockerfile + start-loa.sh)
+#   L4: Loa optimizations (ck, beads_rust, memory stack, flatline)
 #
 # Identity Guarantee: Moltworker's AGENTS.md is NEVER loaded.
 # The CLAUDE_CONFIG_DIR points exclusively to Loa's System Zone.
@@ -36,15 +37,63 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     zsh \
     curl \
+    # Python for Memory Stack and Flatline Protocol
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Build tools for Rust compilation
+    build-essential \
+    pkg-config \
+    libssl-dev \
     && curl -fsSLk https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm /tmp/node.tar.xz \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && node --version \
-    && npm --version
+    && npm --version \
+    && python3 --version
+
+# Install yq (YAML processor - required by Loa)
+RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq \
+    && chmod +x /usr/local/bin/yq \
+    && yq --version
 
 # Install pnpm globally
 RUN npm install -g pnpm@10
+
+# -----------------------------------------------------------------------------
+# Stage 1.5: Loa Optimizations (Rust + Python tools)
+# -----------------------------------------------------------------------------
+
+# Install Rust toolchain for ck-search and beads_rust
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+    && rustc --version \
+    && cargo --version
+
+# Install ck-search (semantic code search)
+# Benefits: 80-90% faster searches, Ghost Feature detection
+RUN cargo install ck-search \
+    && ck --version
+
+# Install beads_rust (persistent task graph)
+# Benefits: Cross-session task persistence, dependency tracking
+RUN cargo install beads_rust \
+    && br --version
+
+# Install Python packages for Memory Stack
+# WARNING: This adds ~2-3GB for PyTorch + transformers
+# Benefits: Semantic memory recall, NOTES.md sync
+RUN pip3 install --no-cache-dir --break-system-packages \
+    sentence-transformers \
+    && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')"
+
+# Install patchright for Flatline NotebookLM integration
+# Benefits: Query NotebookLM notebooks for domain knowledge
+RUN pip3 install --no-cache-dir --break-system-packages patchright \
+    && python3 -m patchright install chromium
 
 # -----------------------------------------------------------------------------
 # Stage 2: OpenClaw Gateway

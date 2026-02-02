@@ -33,6 +33,8 @@
 | 2026-02-03 | claude-opus-4.5 | Updated Loa v1.16.0 → v1.20.0 (guardrails, retrospective learning) |
 | 2026-02-03 | claude-opus-4.5 | Created PRD: Beauvoir Personality & Resilience - principle-driven identity |
 | 2026-02-03 | claude-opus-4.5 | Created BEAUVOIR.md identity document, updated start-loa.sh with recovery protocol |
+| 2026-02-03 | claude-opus-4.5 | Updated Loa v1.20.0 → v1.21.0 (Flatline Protocol multi-model review) |
+| 2026-02-03 | claude-opus-4.5 | Added Loa optimizations to Dockerfile: Rust/cargo, ck-search, beads_rust, memory stack, patchright |
 
 ## Decision Log
 <!-- Major decisions with rationale -->

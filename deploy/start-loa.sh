@@ -151,6 +151,59 @@ fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 console.log('[loa] Configuration updated');
 EOFNODE
 
+# =============================================================================
+# LOA OPTIMIZATION TOOLS INITIALIZATION
+# Initialize semantic search, task graph, and memory tools
+# =============================================================================
+
+init_loa_tools() {
+    echo "[loa] Initializing Loa optimization tools..."
+
+    # Initialize ck-search index if not present
+    if command -v ck &> /dev/null; then
+        if [ ! -f "$LOA_WORKSPACE/.ckindex" ]; then
+            echo "[loa] Initializing ck semantic index..."
+            cd "$LOA_WORKSPACE" && ck --index . 2>/dev/null || echo "[loa] ck index init skipped"
+        else
+            echo "[loa] ck index already exists"
+        fi
+    else
+        echo "[loa] ck not installed, skipping semantic search"
+    fi
+
+    # Initialize beads_rust if not present
+    if command -v br &> /dev/null; then
+        if [ ! -d "$LOA_WORKSPACE/.beads" ]; then
+            echo "[loa] Initializing beads task graph..."
+            cd "$LOA_WORKSPACE" && br init 2>/dev/null || echo "[loa] beads init skipped"
+        else
+            echo "[loa] beads already initialized"
+        fi
+    else
+        echo "[loa] beads_rust not installed, skipping task graph"
+    fi
+
+    # Create Memory Stack directories
+    mkdir -p "$LOA_WORKSPACE/.loa"
+
+    # Pre-download sentence-transformers model if not cached
+    if python3 -c "import sentence_transformers" 2>/dev/null; then
+        if [ ! -d "/root/.cache/sentence_transformers" ]; then
+            echo "[loa] Pre-caching sentence-transformers model..."
+            python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" 2>/dev/null || true
+        else
+            echo "[loa] sentence-transformers model already cached"
+        fi
+    else
+        echo "[loa] sentence-transformers not installed, skipping memory stack"
+    fi
+
+    echo "[loa] Loa tools initialized"
+}
+
+# Initialize tools (runs in background to not delay gateway startup)
+init_loa_tools &
+
 # Clean up stale locks
 rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
 rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true

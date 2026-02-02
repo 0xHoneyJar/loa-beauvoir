@@ -96,6 +96,7 @@ memory:
   # -------------------------------------------------------------------------
   qmd:
     # Master toggle for QMD integration
+    # NOTE: QMD binary not yet installed - uses grep fallback
     enabled: false
     # QMD binary path (or just 'qmd' for PATH)
     binary: qmd
