@@ -72,5 +72,131 @@ USER.md
 # local tooling
 .serena/
 
+# =============================================================================
+# LOA FRAMEWORK EXCLUSIONS
+# =============================================================================
+
 # Loa disabled skills (feature-gated)
 .claude/.skills-disabled/
+
+# Claude Code config (local workspace settings, prompts, scratchpad)
+.claude/config/
+
+# Local settings overrides (user-specific feedback trace configuration)
+.claude/settings.local.json
+
+# Loa Framework State (Legacy - v0.14.0 and earlier)
+.loa-setup-complete
+
+# Run Mode state (v0.18.0)
+.run/
+
+# Loa Memory Stack state (v1.8.0)
+.loa/
+
+# User context files (discovery inputs, uploaded docs, extracted content)
+grimoires/loa/context/*
+!grimoires/loa/context/README.md
+
+# ck semantic search state (embeddings cache, indexes)
+.ck/
+
+# Agent trajectory logs (reasoning audit trails)
+grimoires/loa/a2a/trajectory/*.jsonl
+
+# Pending feedback (temporary file for failed GitHub submissions)
+grimoires/loa/analytics/pending-feedback.json
+
+# Permission audit log (user-specific HITL approval history)
+grimoires/loa/analytics/permission-requests.jsonl
+
+# Server audit reports (contain sensitive deployment info)
+grimoires/loa/deployment/SERVER-REALITY-AUDIT.md
+
+# Memory schema files (cross-session knowledge, project-specific)
+grimoires/loa/memory/*
+!grimoires/loa/memory/README.md
+
+# =============================================================================
+# LOA TEMPLATE EXCLUSIONS
+# =============================================================================
+
+# Generated documentation artifacts (all PRD, SDD, sprint files)
+grimoires/loa/prd*.md
+grimoires/loa/sdd*.md
+grimoires/loa/sprint*.md
+grimoires/loa/NOTES.md
+
+# Sprint Ledger (project-specific cycle/sprint history)
+grimoires/loa/ledger.json
+grimoires/loa/ledger.json.bak
+
+# Archived development cycles (project-specific history)
+grimoires/loa/archive/
+
+# Agent-to-Agent communication (sprint-specific, generated)
+grimoires/loa/a2a/*
+!grimoires/loa/a2a/README.md
+!grimoires/loa/a2a/trajectory/
+grimoires/loa/a2a/trajectory/*
+!grimoires/loa/a2a/trajectory/README.md
+# Compound learning state (tracked for cross-session learning)
+!grimoires/loa/a2a/compound/
+grimoires/loa/a2a/compound/review-markers/*
+!grimoires/loa/a2a/compound/review-markers/.gitkeep
+
+# Deployment artifacts (project-specific)
+grimoires/loa/deployment/*
+!grimoires/loa/deployment/README.md
+
+# Reality extraction (codebase-specific)
+grimoires/loa/reality/*
+!grimoires/loa/reality/README.md
+
+# Analytics (usage tracking, developer-specific)
+grimoires/loa/analytics/*
+!grimoires/loa/analytics/README.md
+
+# Research files (project-specific discoveries)
+grimoires/loa/research/*
+!grimoires/loa/research/README.md
+
+# Public grimoires (project-specific outputs, not template content)
+grimoires/pub/**/*
+!grimoires/pub/**/README.md
+!grimoires/pub/research/
+grimoires/pub/research/*
+!grimoires/pub/research/README.md
+!grimoires/pub/research/*.md
+
+# =============================================================================
+# LOA CONSTRUCTS (licensed skills, user-specific)
+# =============================================================================
+.claude/constructs/
+
+# =============================================================================
+# PROJECT-SPECIFIC EXCLUSIONS (for repos that use loa as a base)
+# =============================================================================
+# Beads graph memory (sprint task tracking)
+# By default, .beads/ is tracked for team collaboration on sprint state.
+# Uncomment to keep local-only:
+# .beads/
+
+# Beads runtime files (never commit)
+.beads/daemon.lock
+.beads/.local_version
+.beads/beads.db
+.beads/*.meta.json
+
+# Beads task graph (template repo - exclude all)
+# For project repos, remove this line to track sprint tasks
+.beads/*.jsonl
+
+# Application artifacts (app/)
+app/src/
+app/tests/
+app/config/
+app/package.json
+app/package-lock.json
+app/tsconfig.json
+app/ecosystem.config.js
