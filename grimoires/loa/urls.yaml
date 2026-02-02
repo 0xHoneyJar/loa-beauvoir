@@ -1,0 +1,24 @@
+# Canonical URL Registry
+# Agents MUST use these URLs instead of guessing/hallucinating
+# See: .claude/protocols/url-registry.md
+
+environments:
+  production:
+    base: ""        # e.g., https://myapp.com
+    api: ""         # e.g., https://api.myapp.com
+  staging:
+    base: ""        # e.g., https://staging.myapp.com
+  local:
+    base: http://localhost:3000
+    api: http://localhost:3000/api
+
+# Placeholders for unconfigured environments
+# Agents use these when actual URLs aren't configured
+placeholders:
+  domain: your-domain.example.com
+  api_base: "{{base}}/api"
+
+# Service-specific URLs (optional)
+# services:
+#   docs: https://docs.myapp.com
+#   dashboard: https://dashboard.myapp.com

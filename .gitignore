@@ -71,3 +71,6 @@ USER.md
 
 # local tooling
 .serena/
+
+# Loa disabled skills (feature-gated)
+.claude/.skills-disabled/
