@@ -1,0 +1,17 @@
+{
+  "name": "loa-cloud-stack-deploy",
+  "version": "0.1.0",
+  "description": "Loa Cloud Stack deployment layer",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint loa-identity/"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
+}
