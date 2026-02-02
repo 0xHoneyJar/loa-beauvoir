@@ -1,0 +1,125 @@
+# =============================================================================
+# Loa Cloud Stack - Cloudflare Workers Configuration
+# =============================================================================
+# Based on moltworker/wrangler.jsonc but with Loa-specific settings
+# =============================================================================
+
+name = "loa-beauvoir"
+main = "../../upstream/moltworker/src/index.ts"
+compatibility_date = "2025-05-06"
+compatibility_flags = ["nodejs_compat"]
+
+# -----------------------------------------------------------------------------
+# Observability
+# -----------------------------------------------------------------------------
+[observability]
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Static Assets (Admin UI)
+# -----------------------------------------------------------------------------
+[assets]
+directory = "../../upstream/moltworker/dist/client"
+not_found_handling = "single-page-application"
+html_handling = "auto-trailing-slash"
+binding = "ASSETS"
+run_worker_first = true
+
+# -----------------------------------------------------------------------------
+# Build Configuration
+# -----------------------------------------------------------------------------
+[build]
+command = "cd ../../upstream/moltworker && npm install && npm run build"
+
+# -----------------------------------------------------------------------------
+# Container Configuration
+# -----------------------------------------------------------------------------
+# Uses our Loa-specific Dockerfile, not moltworker's
+[[containers]]
+class_name = "Sandbox"
+image = "../Dockerfile"
+instance_type = "standard-4"
+max_instances = 1
+
+# -----------------------------------------------------------------------------
+# Durable Objects
+# -----------------------------------------------------------------------------
+[[durable_objects.bindings]]
+name = "Sandbox"
+class_name = "Sandbox"
+
+[[migrations]]
+new_sqlite_classes = ["Sandbox"]
+tag = "v1"
+
+# -----------------------------------------------------------------------------
+# R2 Storage
+# -----------------------------------------------------------------------------
+[[r2_buckets]]
+binding = "MOLTBOT_BUCKET"
+bucket_name = "loa-beauvoir-data"
+
+# -----------------------------------------------------------------------------
+# Cron Triggers
+# -----------------------------------------------------------------------------
+# Sync state to R2 every 5 minutes (WAL manager handles finer granularity internally)
+[triggers]
+crons = ["*/5 * * * *"]
+
+# -----------------------------------------------------------------------------
+# Browser Rendering (for CDP shim)
+# -----------------------------------------------------------------------------
+[browser]
+binding = "BROWSER"
+
+# -----------------------------------------------------------------------------
+# Import Rules
+# -----------------------------------------------------------------------------
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = false
+
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = false
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+[vars]
+# Loa-specific configuration
+LOA_VERSION = "1.16.0"
+WORKSPACE = "/workspace"
+
+# =============================================================================
+# SECRETS (configure via `wrangler secret put <NAME>`)
+# =============================================================================
+#
+# Required:
+#   ANTHROPIC_API_KEY      - Anthropic API key for Claude
+#
+# Optional - Gateway Auth (choose one):
+#   GATEWAY_TOKEN          - Token for gateway auth (recommended)
+#   or use device pairing if not set
+#
+# Optional - Cloudflare Access:
+#   CF_ACCESS_TEAM_DOMAIN  - Cloudflare Access team domain
+#   CF_ACCESS_AUD          - Cloudflare Access application audience
+#
+# Optional - Messaging Channels:
+#   TELEGRAM_BOT_TOKEN     - Telegram bot token
+#   DISCORD_BOT_TOKEN      - Discord bot token
+#   SLACK_BOT_TOKEN        - Slack bot token
+#   SLACK_APP_TOKEN        - Slack app-level token
+#
+# Required for R2 Persistence:
+#   R2_ACCESS_KEY_ID       - R2 access key ID
+#   R2_SECRET_ACCESS_KEY   - R2 secret access key
+#   CF_ACCOUNT_ID          - Cloudflare account ID
+#
+# Optional - AI Gateway:
+#   AI_GATEWAY_BASE_URL    - Cloudflare AI Gateway URL
+#
+# =============================================================================

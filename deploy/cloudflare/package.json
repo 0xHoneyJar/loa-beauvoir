@@ -1,0 +1,26 @@
+{
+  "name": "loa-beauvoir-cloudflare",
+  "version": "0.1.0",
+  "description": "Cloudflare Workers deployment for Loa Cloud Stack",
+  "type": "module",
+  "scripts": {
+    "build": "cd ../../upstream/moltworker && npm install && npm run build",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail",
+    "secret:anthropic": "wrangler secret put ANTHROPIC_API_KEY",
+    "secret:gateway": "wrangler secret put GATEWAY_TOKEN",
+    "secret:telegram": "wrangler secret put TELEGRAM_BOT_TOKEN",
+    "secret:discord": "wrangler secret put DISCORD_BOT_TOKEN",
+    "secret:slack-bot": "wrangler secret put SLACK_BOT_TOKEN",
+    "secret:slack-app": "wrangler secret put SLACK_APP_TOKEN",
+    "secret:r2-key": "wrangler secret put R2_ACCESS_KEY_ID",
+    "secret:r2-secret": "wrangler secret put R2_SECRET_ACCESS_KEY",
+    "secret:cf-account": "wrangler secret put CF_ACCOUNT_ID",
+    "r2:create": "wrangler r2 bucket create loa-beauvoir-data",
+    "r2:list": "wrangler r2 bucket list"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
