@@ -165,7 +165,7 @@ config.gateway = config.gateway || {};
 config.channels = config.channels || {};
 
 // Gateway configuration
-config.gateway.port = 18789;
+config.gateway.port = 3000;
 config.gateway.mode = 'local';
 config.gateway.trustedProxies = ['10.1.0.0'];
 

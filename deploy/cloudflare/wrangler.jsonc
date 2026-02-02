@@ -15,20 +15,7 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // Import rules for HTML and PNG files
-  "rules": [
-    {
-      "type": "Text",
-      "globs": ["**/*.html"],
-      "fallthrough": false
-    },
-    {
-      "type": "Data",
-      "globs": ["**/*.png"],
-      "fallthrough": false
-    }
-  ],
-  // Build command - builds moltworker admin UI
+  // Build handled by vite (moltworker)
   "build": {
     "command": "cd ../../upstream/moltworker && npm install && npm run build"
   },

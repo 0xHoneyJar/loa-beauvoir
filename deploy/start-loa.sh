@@ -148,7 +148,7 @@ BIND_MODE="lan"
 # Gateway token (support both new and legacy env var names)
 GATEWAY_TOKEN="${GATEWAY_TOKEN:-${CLAWDBOT_GATEWAY_TOKEN:-}}"
 
-echo "[loa] Gateway port: 18789"
+echo "[loa] Gateway port: 3000"
 echo "[loa] Bind mode: $BIND_MODE"
 echo "[loa] Token auth: $([ -n "$GATEWAY_TOKEN" ] && echo "enabled" || echo "disabled (device pairing)")"
 
@@ -156,8 +156,8 @@ cd "$WORKSPACE"
 
 if [ -n "$GATEWAY_TOKEN" ]; then
     echo "[loa] Starting gateway with token auth..."
-    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE" --token "$GATEWAY_TOKEN"
+    exec openclaw gateway --port 3000 --verbose --allow-unconfigured --bind "$BIND_MODE" --token "$GATEWAY_TOKEN"
 else
     echo "[loa] Starting gateway with device pairing (no token)..."
-    exec openclaw gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE"
+    exec openclaw gateway --port 3000 --verbose --allow-unconfigured --bind "$BIND_MODE"
 fi
