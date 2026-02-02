@@ -50,10 +50,9 @@ RUN npm install -g pnpm@10
 # Stage 2: OpenClaw Gateway
 # -----------------------------------------------------------------------------
 
-# Install OpenClaw (formerly clawdbot) - pinned version for reproducibility
-ARG OPENCLAW_VERSION=2026.1.30
-RUN npm install -g openclaw@${OPENCLAW_VERSION} \
-    && openclaw --version
+# Install clawdbot - same version as moltworker for compatibility
+RUN npm install -g clawdbot@2026.1.24-3 \
+    && clawdbot --version
 
 # Create directory structure
 # Note: We use /workspace for Loa (not /root/clawd like moltbot)
@@ -84,7 +83,9 @@ RUN git clone --depth 1 --branch ${LOA_BRANCH} ${LOA_REPO} /tmp/loa-repo \
 COPY start-loa.sh /usr/local/bin/start-loa.sh
 COPY loa-identity/ /workspace/deploy/loa-identity/
 
-RUN chmod +x /usr/local/bin/start-loa.sh
+# Make executable and create symlink for moltworker compatibility
+RUN chmod +x /usr/local/bin/start-loa.sh \
+    && ln -sf /usr/local/bin/start-loa.sh /usr/local/bin/start-moltbot.sh
 
 # -----------------------------------------------------------------------------
 # Runtime Configuration
@@ -92,12 +93,16 @@ RUN chmod +x /usr/local/bin/start-loa.sh
 
 WORKDIR /workspace
 
-# Expose the gateway port
-EXPOSE 18789
+# Expose ports: 3000 for SDK health checks, 18789 for gateway
+EXPOSE 3000 18789
 
 # Environment - critical for Loa identity isolation
 ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Entrypoint - Loa startup, NOT moltbot's start-moltbot.sh
-ENTRYPOINT ["/usr/local/bin/start-loa.sh"]
+# Build timestamp to force fresh builds when needed
+ARG BUILD_TS=20260203-0920
+
+# NO ENTRYPOINT - The base image handles SDK communication
+# The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
+# (which is symlinked to start-loa.sh)
