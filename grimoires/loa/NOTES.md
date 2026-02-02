@@ -5,11 +5,14 @@
 
 ## Active Sub-Goals
 <!-- Current objectives being pursued -->
-- **PRD complete**: Loa Cloud Stack (loa-beauvoir) v0.2.0
+- **Infrastructure PRD complete**: Loa Cloud Stack (loa-beauvoir) v0.2.0
+- **Resilience PRD created**: Beauvoir Personality & Resilience v0.1.0
 - **SDD complete**: System architecture designed v0.1.0
 - **Sprint Plan complete**: 5 sprints, 35 tasks total
 - **All sprints implemented**: Foundation, Container, Persistence, Deployment, Learning
-- Next: Manual deployment steps (R2 bucket, secrets, first deploy)
+- **Container deployed**: Gateway connects, Telegram pending pairing approval
+- **Identity created**: BEAUVOIR.md with principle-driven personality
+- Next: Implement two-phase memory consolidation, enable memory_search for grimoires
 
 ## Discovered Technical Debt
 <!-- Issues found during implementation that need future attention -->
@@ -26,6 +29,10 @@
 | 2026-02-02 | claude-opus-4.5 | Completed SDD - 3-layer architecture, WAL persistence, identity isolation |
 | 2026-02-02 | claude-opus-4.5 | Completed Sprint Plan - 5 sprints (35 tasks), MVP at sprint 4 |
 | 2026-02-02 | claude-opus-4.5 | Implemented all 5 sprints: upstream subtrees, Dockerfile, WAL persistence, Cloudflare config, compound learning |
+| 2026-02-03 | claude-opus-4.5 | Fixed container startup (removed ENTRYPOINT), gateway now connects |
+| 2026-02-03 | claude-opus-4.5 | Updated Loa v1.16.0 → v1.20.0 (guardrails, retrospective learning) |
+| 2026-02-03 | claude-opus-4.5 | Created PRD: Beauvoir Personality & Resilience - principle-driven identity |
+| 2026-02-03 | claude-opus-4.5 | Created BEAUVOIR.md identity document, updated start-loa.sh with recovery protocol |
 
 ## Decision Log
 <!-- Major decisions with rationale -->
