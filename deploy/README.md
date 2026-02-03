@@ -39,6 +39,34 @@ This ensures **100% Loa identity** with no moltbot hangover.
 
 ## Local Development
 
+### Quick Start (Hot-Reload)
+
+The fastest way to develop locally with automatic restart on file changes:
+
+```bash
+# 1. Configure environment
+cp .env.local.example .env.local
+# Edit .env.local and add your ANTHROPIC_API_KEY
+
+# 2. Start development environment
+make dev
+
+# 3. Edit files - changes apply automatically
+# Edit deploy/loa-identity/*.ts and watch the gateway restart
+
+# 4. Shell into container for debugging
+make dev-shell
+
+# 5. Stop when done
+make dev-down
+```
+
+**Requirements:**
+- Docker Desktop 4.25+ with VirtioFS enabled (macOS)
+- `.env.local` with `ANTHROPIC_API_KEY` configured
+
+**Note:** `docker-compose.dev.yml` is for hot-reload development. `docker-compose.yml` in repo root is for standalone openclaw gateway (different use case).
+
 ### Build the Container
 
 ```bash
@@ -101,12 +129,24 @@ curl -s http://localhost:18789/health
 curl -v http://localhost:18789/health
 ```
 
-### Deploy to Cloudflare (Sprint 4)
+### Deploy to Cloudflare
 
+**Automated (CI/CD):** Push to `main` branch triggers automatic deployment via `.github/workflows/cloudflare-deploy.yml`.
+
+**Manual (escape hatch):**
 ```bash
+make deploy-cf
+# or
 cd deploy/cloudflare
 npm run deploy
 ```
+
+**Required GitHub Secrets for CI/CD:**
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_API_TOKEN` | API token with Workers + R2 scope |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+| `CF_SUBDOMAIN` | Workers subdomain (e.g., `your-account`) |
 
 ## Upstream Management
 
