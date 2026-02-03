@@ -1,0 +1,81 @@
+# =============================================================================
+# Loa Development Environment
+# =============================================================================
+# Hot-reload development with volume mounts for instant feedback.
+#
+# Usage:
+#   make dev        # Start development environment
+#   make dev-shell  # Shell into container
+#   make dev-logs   # Follow container logs
+#   make dev-down   # Stop environment
+#   make dev-clean  # Remove all state
+#
+# Prerequisites:
+#   - Copy .env.local.example to .env.local and fill in your API keys
+#   - Docker Desktop with VirtioFS enabled (macOS)
+#
+# Note: This is for Loa identity development with hot-reload.
+#       Use docker-compose.yml for standalone openclaw gateway.
+# =============================================================================
+
+services:
+  loa-dev:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dev
+    image: loa-dev:local
+
+    # Load credentials from .env.local (gitignored)
+    env_file:
+      - .env.local
+
+    # Volume mounts for hot-reload
+    # Changes to these directories apply immediately without rebuild
+    volumes:
+      # Loa System Zone (read-only - don't modify framework files)
+      - ./.claude:/workspace/.claude:ro
+      # Loa State Zone (read-write - grimoire changes persist)
+      - ./grimoires:/workspace/grimoires:rw
+      # Identity layer code (read-write - hot-reload target)
+      - ./deploy/loa-identity:/workspace/deploy/loa-identity:rw
+      # Persistent state (WAL, beads, ck index)
+      - loa-data:/data
+
+    # Environment variables
+    environment:
+      BEAUVOIR_DEV_MODE: "1"
+      CLAUDE_CONFIG_DIR: /workspace/.claude
+      NODE_OPTIONS: "--max-old-space-size=4096"
+
+    # Port mappings
+    ports:
+      - "18789:18789"  # Gateway
+      - "3000:3000"    # Health/SDK
+
+    # Resource limits (match production)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18789/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    # Startup command
+    command: ["/usr/local/bin/start-loa-dev.sh"]
+
+    # Restart policy
+    restart: unless-stopped
+
+# =============================================================================
+# Named Volumes
+# =============================================================================
+# Version suffix for migration: update when breaking changes occur
+volumes:
+  loa-data:
+    name: loa-dev-data-v1

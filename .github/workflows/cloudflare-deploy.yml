@@ -1,0 +1,99 @@
+# =============================================================================
+# Cloudflare Workers Deployment
+# =============================================================================
+# Automated deployment to Cloudflare Workers on push to main.
+#
+# Triggers:
+#   - Push to main branch
+#   - Path filters: deploy/**, .claude/**, grimoires/**
+#
+# Required Secrets:
+#   - CLOUDFLARE_API_TOKEN: API token with Workers + R2 scope
+#   - CLOUDFLARE_ACCOUNT_ID: Cloudflare account identifier
+#   - CF_SUBDOMAIN: Workers subdomain (e.g., your-account)
+#
+# Note: Cloudflare Workers Containers builds the image from deploy/Dockerfile
+#       during wrangler deploy. This workflow does NOT use GHCR images.
+# =============================================================================
+
+name: Cloudflare Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - '.claude/**'
+      - 'grimoires/**'
+
+# Cancel in-progress deployments when new commits arrive
+concurrency:
+  group: cloudflare-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: deploy/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "::group::Wrangler Deploy"
+          wrangler deploy
+          echo "::endgroup::"
+
+      - name: Smoke test with retry
+        env:
+          WORKER_URL: https://loa-beauvoir.${{ secrets.CF_SUBDOMAIN }}.workers.dev
+        run: |
+          echo "Testing endpoint: $WORKER_URL/sandbox-health"
+          for i in 1 2 3 4 5 6; do
+            echo "Attempt $i/6..."
+            if curl -sf "$WORKER_URL/sandbox-health" --max-time 10; then
+              echo ""
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Waiting $((i * 10)) seconds before retry..."
+            sleep $((i * 10))
+          done
+          echo "Health check failed after 6 attempts"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        working-directory: deploy/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "Deployment failed, attempting rollback..."
+          wrangler rollback --message "Automated rollback due to smoke test failure" || {
+            echo "Rollback not available or failed"
+            echo "Manual intervention may be required"
+          }
+
+      - name: Post deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "::notice::Deployment successful - https://loa-beauvoir.${{ secrets.CF_SUBDOMAIN }}.workers.dev"
+          else
+            echo "::error::Deployment failed - check logs above"
+          fi
