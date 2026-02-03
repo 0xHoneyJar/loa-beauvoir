@@ -70,9 +70,9 @@ RUN npm install -g pnpm@10
 # Stage 3: OpenClaw Gateway
 # -----------------------------------------------------------------------------
 
-# Install clawdbot - same version as moltworker for compatibility
-RUN npm install -g clawdbot@2026.1.24-3 \
-    && clawdbot --version
+# NOTE: clawdbot is installed at RUNTIME via start-loa.sh
+# This avoids a ~300MB layer that causes Cloudflare registry push timeouts.
+# The startup script checks for clawdbot and installs if missing.
 
 # Create directory structure
 RUN mkdir -p \

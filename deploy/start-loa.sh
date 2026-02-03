@@ -204,6 +204,26 @@ init_loa_tools() {
 # Initialize tools (runs in background to not delay gateway startup)
 init_loa_tools &
 
+# =============================================================================
+# RUNTIME CLAWDBOT INSTALLATION
+# Installed at runtime to avoid large Docker layer that times out on push
+# =============================================================================
+
+CLAWDBOT_VERSION="2026.1.24-3"
+
+install_clawdbot() {
+    if ! command -v clawdbot &> /dev/null; then
+        echo "[loa] clawdbot not found, installing v${CLAWDBOT_VERSION}..."
+        npm install -g "clawdbot@${CLAWDBOT_VERSION}"
+        clawdbot --version
+        log_recovery "Installed clawdbot v${CLAWDBOT_VERSION} at runtime"
+    else
+        echo "[loa] clawdbot already installed: $(clawdbot --version 2>/dev/null || echo 'unknown')"
+    fi
+}
+
+install_clawdbot
+
 # Clean up stale locks
 rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
 rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
