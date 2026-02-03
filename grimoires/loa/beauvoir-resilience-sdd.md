@@ -1,10 +1,10 @@
 # SDD: Beauvoir Personality & Resilience
 
 > **Status**: Draft
-> **Version**: 0.2.0
+> **Version**: 0.3.0
 > **Created**: 2026-02-03
 > **Updated**: 2026-02-03
-> **PRD Reference**: `grimoires/loa/beauvoir-resilience-prd.md` v0.2.0
+> **PRD Reference**: `grimoires/loa/prd.md` v0.3.0
 > **Author**: Claude Opus 4.5
 > **Reviewed**: Flatline Protocol (GPT-5.2 + Opus, 100% agreement)
 
@@ -2465,6 +2465,1186 @@ All changes are logged to NOTES.md for transparency.
 | Integrity | No signing for tamper detection | Ed25519 signatures on manifests and allowlists |
 | Self-repair | Root execution risk | Non-root user (loa-user, UID 1000), no runtime apt |
 | WAL schema | Implementation mismatched spec | Fixed: seq field, base64 encoding, consistent checksums |
+
+---
+
+## 10. Operational Hardening Architecture
+
+> **Added**: v0.3.0
+> **Sources**: PRD v0.3.0 FR-6 through FR-11, openclaw-starter-kit analysis
+
+### 10.1 Problem Context
+
+Autonomous AI systems running 24/7 suffer from predictable failure modes that the core resilience layer doesn't address:
+
+| Failure Mode | Root Cause | Impact |
+|--------------|------------|--------|
+| Subagent timeout crashes | Default 3-min timeout too short | Tasks killed mid-execution |
+| Resource explosion | Cron/script proliferation | API quota exhaustion |
+| Task redundancy | Non-MECE task design | Duplicate messages, wasted resources |
+| Scheduler stalls | No self-monitoring | Silent failures |
+| Context overflow | No usage tracking | Unexpected compaction |
+
+### 10.2 Subagent Timeout Enforcement
+
+**Purpose**: Prevent trusted models from being killed mid-task.
+
+```typescript
+// deploy/loa-identity/scheduler/timeout-enforcer.ts
+
+interface TimeoutConfig {
+  minMinutes: number;        // Default: 30 for trusted models
+  warnBelowMinutes: number;  // Default: 10
+  hardFloorMinutes: number;  // Default: 3 (blocks spawn if below)
+}
+
+interface TrustedModel {
+  name: string;
+  patterns: string[];  // Regex patterns to match model ID
+}
+
+const TRUSTED_MODELS: TrustedModel[] = [
+  { name: 'opus', patterns: ['claude-opus', 'opus-4'] },
+  { name: 'codex', patterns: ['codex-max', 'gpt-4-turbo'] },
+];
+
+class TimeoutEnforcer {
+  private config: TimeoutConfig;
+  private auditLog: AuditLogger;
+
+  constructor(config?: Partial<TimeoutConfig>) {
+    this.config = {
+      minMinutes: config?.minMinutes ?? 30,
+      warnBelowMinutes: config?.warnBelowMinutes ?? 10,
+      hardFloorMinutes: config?.hardFloorMinutes ?? 3,
+    };
+    this.auditLog = new AuditLogger('/workspace/.loa/timeout-audit.log');
+  }
+
+  /**
+   * Validate timeout before subagent spawn
+   * @throws Error if timeout below hard floor
+   */
+  async validateTimeout(
+    modelId: string,
+    requestedMinutes: number
+  ): Promise<{ valid: boolean; adjustedMinutes: number; warnings: string[] }> {
+    const warnings: string[] = [];
+    let adjustedMinutes = requestedMinutes;
+
+    // Hard floor check - block spawn
+    if (requestedMinutes < this.config.hardFloorMinutes) {
+      await this.auditLog.log('timeout_blocked', {
+        modelId,
+        requested: requestedMinutes,
+        reason: `Below hard floor (${this.config.hardFloorMinutes} min)`,
+      });
+      throw new Error(
+        `Timeout ${requestedMinutes}min blocked: below hard floor ` +
+        `${this.config.hardFloorMinutes}min. Increase timeout to proceed.`
+      );
+    }
+
+    // Trusted model enforcement
+    const isTrusted = TRUSTED_MODELS.some(m =>
+      m.patterns.some(p => new RegExp(p, 'i').test(modelId))
+    );
+
+    if (isTrusted && requestedMinutes < this.config.minMinutes) {
+      warnings.push(
+        `Trusted model ${modelId}: timeout ${requestedMinutes}min ` +
+        `below recommended ${this.config.minMinutes}min`
+      );
+      adjustedMinutes = this.config.minMinutes;
+    }
+
+    // Warning threshold
+    if (requestedMinutes < this.config.warnBelowMinutes) {
+      warnings.push(
+        `Timeout ${requestedMinutes}min below warning threshold ` +
+        `${this.config.warnBelowMinutes}min - consider increasing`
+      );
+    }
+
+    // Log configuration
+    await this.auditLog.log('timeout_validated', {
+      modelId,
+      requested: requestedMinutes,
+      adjusted: adjustedMinutes,
+      isTrusted,
+      warnings,
+    });
+
+    return { valid: true, adjustedMinutes, warnings };
+  }
+}
+```
+
+### 10.3 Weekly Bloat Audit
+
+**Purpose**: Detect and prevent resource proliferation before quota exhaustion.
+
+```typescript
+// deploy/loa-identity/scheduler/bloat-auditor.ts
+
+interface BloatThresholds {
+  crons: { warn: number; critical: number };
+  scripts: { warn: number; critical: number };
+  stateFileSize: { warn: number; critical: number };  // MB
+}
+
+interface BloatAuditResult {
+  timestamp: Date;
+  status: 'healthy' | 'warning' | 'critical';
+  counts: {
+    crons: number;
+    scripts: number;
+    orphanedScripts: number;
+    overlappingCrons: number;
+    stateFileSizeMB: number;
+  };
+  violations: BloatViolation[];
+  remediation: string[];
+}
+
+interface BloatViolation {
+  type: 'count_exceeded' | 'orphaned' | 'overlap' | 'size_exceeded';
+  resource: string;
+  details: string;
+  severity: 'warning' | 'critical';
+}
+
+class BloatAuditor {
+  private thresholds: BloatThresholds;
+  private auditLog: AuditLogger;
+
+  constructor(thresholds?: Partial<BloatThresholds>) {
+    this.thresholds = {
+      crons: thresholds?.crons ?? { warn: 15, critical: 20 },
+      scripts: thresholds?.scripts ?? { warn: 40, critical: 50 },
+      stateFileSize: thresholds?.stateFileSize ?? { warn: 5, critical: 10 },
+    };
+    this.auditLog = new AuditLogger('/workspace/.loa/bloat-audit.log');
+  }
+
+  async runAudit(): Promise<BloatAuditResult> {
+    const violations: BloatViolation[] = [];
+    const remediation: string[] = [];
+
+    // 1. Count crons
+    const cronCount = await this.countCrons();
+    if (cronCount > this.thresholds.crons.critical) {
+      violations.push({
+        type: 'count_exceeded',
+        resource: 'crons',
+        details: `${cronCount} crons (critical: ${this.thresholds.crons.critical})`,
+        severity: 'critical',
+      });
+      remediation.push('Consolidate crons - batch similar schedules');
+    } else if (cronCount > this.thresholds.crons.warn) {
+      violations.push({
+        type: 'count_exceeded',
+        resource: 'crons',
+        details: `${cronCount} crons (warn: ${this.thresholds.crons.warn})`,
+        severity: 'warning',
+      });
+    }
+
+    // 2. Count scripts
+    const scriptCount = await this.countScripts();
+    if (scriptCount > this.thresholds.scripts.critical) {
+      violations.push({
+        type: 'count_exceeded',
+        resource: 'scripts',
+        details: `${scriptCount} scripts (critical: ${this.thresholds.scripts.critical})`,
+        severity: 'critical',
+      });
+      remediation.push('Remove orphaned scripts, consolidate duplicates');
+    } else if (scriptCount > this.thresholds.scripts.warn) {
+      violations.push({
+        type: 'count_exceeded',
+        resource: 'scripts',
+        details: `${scriptCount} scripts (warn: ${this.thresholds.scripts.warn})`,
+        severity: 'warning',
+      });
+    }
+
+    // 3. Find orphaned scripts (not referenced anywhere)
+    const orphanedScripts = await this.findOrphanedScripts();
+    for (const script of orphanedScripts) {
+      violations.push({
+        type: 'orphaned',
+        resource: script,
+        details: 'Script not referenced in codebase',
+        severity: 'warning',
+      });
+    }
+    if (orphanedScripts.length > 0) {
+      remediation.push(`Delete ${orphanedScripts.length} orphaned scripts`);
+    }
+
+    // 4. Find overlapping cron schedules
+    const overlappingCrons = await this.findOverlappingCrons();
+    for (const { cron1, cron2, schedule } of overlappingCrons) {
+      violations.push({
+        type: 'overlap',
+        resource: `${cron1} + ${cron2}`,
+        details: `Both scheduled at ${schedule}`,
+        severity: 'warning',
+      });
+    }
+    if (overlappingCrons.length > 0) {
+      remediation.push('Stagger overlapping crons or consolidate');
+    }
+
+    // 5. Check state file sizes
+    const stateFileSizeMB = await this.getStateFileSize();
+    if (stateFileSizeMB > this.thresholds.stateFileSize.critical) {
+      violations.push({
+        type: 'size_exceeded',
+        resource: 'state files',
+        details: `${stateFileSizeMB}MB (critical: ${this.thresholds.stateFileSize.critical}MB)`,
+        severity: 'critical',
+      });
+      remediation.push('Compact WAL, archive old memory files');
+    } else if (stateFileSizeMB > this.thresholds.stateFileSize.warn) {
+      violations.push({
+        type: 'size_exceeded',
+        resource: 'state files',
+        details: `${stateFileSizeMB}MB (warn: ${this.thresholds.stateFileSize.warn}MB)`,
+        severity: 'warning',
+      });
+    }
+
+    // Determine overall status
+    const hasCritical = violations.some(v => v.severity === 'critical');
+    const hasWarning = violations.some(v => v.severity === 'warning');
+    const status = hasCritical ? 'critical' : hasWarning ? 'warning' : 'healthy';
+
+    const result: BloatAuditResult = {
+      timestamp: new Date(),
+      status,
+      counts: {
+        crons: cronCount,
+        scripts: scriptCount,
+        orphanedScripts: orphanedScripts.length,
+        overlappingCrons: overlappingCrons.length,
+        stateFileSizeMB,
+      },
+      violations,
+      remediation,
+    };
+
+    // Log to audit trail
+    await this.auditLog.log('bloat_audit', result);
+
+    // Write summary to NOTES.md
+    await this.writeToNotes(result);
+
+    return result;
+  }
+
+  private async countCrons(): Promise<number> {
+    // Count cron entries from scheduler config
+    const { stdout } = await exec('crontab -l 2>/dev/null | grep -v "^#" | grep -v "^$" | wc -l');
+    return parseInt(stdout.trim()) || 0;
+  }
+
+  private async countScripts(): Promise<number> {
+    const { stdout } = await exec('find scripts/ -type f \\( -name "*.sh" -o -name "*.py" \\) 2>/dev/null | wc -l');
+    return parseInt(stdout.trim()) || 0;
+  }
+
+  private async findOrphanedScripts(): Promise<string[]> {
+    const orphaned: string[] = [];
+    const { stdout } = await exec('find scripts/ -type f 2>/dev/null');
+    const scripts = stdout.trim().split('\n').filter(Boolean);
+
+    for (const script of scripts) {
+      const basename = path.basename(script);
+      // Check if referenced anywhere except in scripts/ itself
+      const { stdout: refs } = await exec(
+        `rg -l "\\b${basename}\\b" . --glob '!scripts/*' 2>/dev/null || true`
+      );
+      if (!refs.trim()) {
+        orphaned.push(script);
+      }
+    }
+
+    return orphaned;
+  }
+
+  private async findOverlappingCrons(): Promise<Array<{ cron1: string; cron2: string; schedule: string }>> {
+    // Parse crontab and find entries with identical schedules
+    const { stdout } = await exec('crontab -l 2>/dev/null');
+    const lines = stdout.split('\n').filter(l => l && !l.startsWith('#'));
+
+    const scheduleMap = new Map<string, string[]>();
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 6) {
+        const schedule = parts.slice(0, 5).join(' ');
+        const command = parts.slice(5).join(' ');
+        if (!scheduleMap.has(schedule)) {
+          scheduleMap.set(schedule, []);
+        }
+        scheduleMap.get(schedule)!.push(command);
+      }
+    }
+
+    const overlaps: Array<{ cron1: string; cron2: string; schedule: string }> = [];
+    for (const [schedule, commands] of scheduleMap) {
+      if (commands.length > 1) {
+        for (let i = 0; i < commands.length - 1; i++) {
+          overlaps.push({
+            cron1: commands[i],
+            cron2: commands[i + 1],
+            schedule,
+          });
+        }
+      }
+    }
+
+    return overlaps;
+  }
+
+  private async getStateFileSize(): Promise<number> {
+    const { stdout } = await exec('du -sm /workspace/grimoires/loa/ 2>/dev/null | cut -f1');
+    return parseInt(stdout.trim()) || 0;
+  }
+
+  private async writeToNotes(result: BloatAuditResult): Promise<void> {
+    const timestamp = result.timestamp.toISOString();
+    const statusEmoji = result.status === 'healthy' ? '✅' :
+                        result.status === 'warning' ? '⚠️' : '🚨';
+
+    const entry = `
+### Bloat Audit ${timestamp}
+
+**Status**: ${statusEmoji} ${result.status.toUpperCase()}
+
+| Metric | Count | Threshold |
+|--------|-------|-----------|
+| Crons | ${result.counts.crons} | warn: ${this.thresholds.crons.warn}, crit: ${this.thresholds.crons.critical} |
+| Scripts | ${result.counts.scripts} | warn: ${this.thresholds.scripts.warn}, crit: ${this.thresholds.scripts.critical} |
+| Orphaned | ${result.counts.orphanedScripts} | - |
+| Overlapping | ${result.counts.overlappingCrons} | - |
+| State Size | ${result.counts.stateFileSizeMB}MB | warn: ${this.thresholds.stateFileSize.warn}MB |
+
+${result.violations.length > 0 ? '**Violations:**\n' + result.violations.map(v => `- [${v.severity}] ${v.type}: ${v.details}`).join('\n') : ''}
+
+${result.remediation.length > 0 ? '**Remediation:**\n' + result.remediation.map(r => `- ${r}`).join('\n') : ''}
+`;
+
+    await this.appendToNotes(entry);
+  }
+}
+```
+
+### 10.4 MECE Task Validation
+
+**Purpose**: Prevent redundant/overlapping scheduled tasks.
+
+```typescript
+// deploy/loa-identity/scheduler/mece-validator.ts
+
+interface MECERule {
+  type: 'cron_overlap' | 'script_similarity' | 'purpose_missing';
+  check: (candidate: TaskCandidate) => Promise<MECEViolation | null>;
+}
+
+interface TaskCandidate {
+  type: 'cron' | 'script';
+  name: string;
+  schedule?: string;
+  purpose?: string;
+  content?: string;
+}
+
+interface MECEViolation {
+  rule: string;
+  candidate: string;
+  conflictsWith?: string;
+  similarity?: number;
+  suggestion: string;
+}
+
+class MECEValidator {
+  private auditLog: AuditLogger;
+  private similarityThreshold = 0.7;
+
+  constructor() {
+    this.auditLog = new AuditLogger('/workspace/.loa/mece-audit.log');
+  }
+
+  /**
+   * Validate a new task before creation
+   * @throws Error with MECE violation details if invalid
+   */
+  async validate(candidate: TaskCandidate): Promise<{ valid: boolean; violations: MECEViolation[] }> {
+    const violations: MECEViolation[] = [];
+
+    // Rule 1: No overlapping cron schedules
+    if (candidate.type === 'cron' && candidate.schedule) {
+      const existing = await this.getExistingCronSchedules();
+      const conflict = existing.find(e => e.schedule === candidate.schedule);
+      if (conflict) {
+        violations.push({
+          rule: 'cron_overlap',
+          candidate: candidate.name,
+          conflictsWith: conflict.name,
+          suggestion: `Stagger schedule or consolidate with ${conflict.name}`,
+        });
+      }
+    }
+
+    // Rule 2: No highly similar script names
+    if (candidate.type === 'script') {
+      const existingScripts = await this.getExistingScripts();
+      for (const existing of existingScripts) {
+        const similarity = this.calculateNameSimilarity(candidate.name, existing);
+        if (similarity >= this.similarityThreshold) {
+          violations.push({
+            rule: 'script_similarity',
+            candidate: candidate.name,
+            conflictsWith: existing,
+            similarity,
+            suggestion: `Check if ${existing} already does this - consolidate if so`,
+          });
+        }
+      }
+    }
+
+    // Rule 3: Purpose header required
+    if (!candidate.purpose) {
+      violations.push({
+        rule: 'purpose_missing',
+        candidate: candidate.name,
+        suggestion: 'Add PURPOSE header describing what this task does',
+      });
+    }
+
+    // Log validation
+    await this.auditLog.log('mece_validation', {
+      candidate,
+      valid: violations.length === 0,
+      violations,
+    });
+
+    return { valid: violations.length === 0, violations };
+  }
+
+  /**
+   * Calculate Levenshtein-based name similarity
+   */
+  private calculateNameSimilarity(a: string, b: string): number {
+    // Normalize: lowercase, remove extension, split on - and _
+    const normalize = (s: string) => s.toLowerCase()
+      .replace(/\.(sh|py|ts|js)$/, '')
+      .split(/[-_]/)
+      .join(' ');
+
+    const na = normalize(a);
+    const nb = normalize(b);
+
+    // Jaccard similarity on words
+    const wordsA = new Set(na.split(/\s+/));
+    const wordsB = new Set(nb.split(/\s+/));
+    const intersection = new Set([...wordsA].filter(x => wordsB.has(x)));
+    const union = new Set([...wordsA, ...wordsB]);
+
+    return intersection.size / union.size;
+  }
+
+  private async getExistingCronSchedules(): Promise<Array<{ name: string; schedule: string }>> {
+    // Implementation would read from scheduler config or crontab
+    return [];
+  }
+
+  private async getExistingScripts(): Promise<string[]> {
+    const { stdout } = await exec('find scripts/ -type f 2>/dev/null');
+    return stdout.trim().split('\n').filter(Boolean).map(p => path.basename(p));
+  }
+}
+```
+
+### 10.5 Notification Sink Interface
+
+**Purpose**: Unified alerting for critical operational events.
+
+```typescript
+// deploy/loa-identity/scheduler/notification-sink.ts
+
+interface NotificationSink {
+  notify(
+    severity: 'info' | 'warning' | 'critical',
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<void>;
+}
+
+interface NotificationConfig {
+  enabled: boolean;
+  channels: NotificationChannel[];
+  minSeverity: 'info' | 'warning' | 'critical';
+}
+
+interface NotificationChannel {
+  type: 'slack' | 'discord' | 'webhook' | 'log';
+  url?: string;
+  channel?: string;
+}
+
+class CompositeNotificationSink implements NotificationSink {
+  private channels: NotificationChannel[];
+  private minSeverity: 'info' | 'warning' | 'critical';
+  private severityOrder = { info: 0, warning: 1, critical: 2 };
+
+  constructor(config: NotificationConfig) {
+    this.channels = config.channels;
+    this.minSeverity = config.minSeverity;
+  }
+
+  async notify(
+    severity: 'info' | 'warning' | 'critical',
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<void> {
+    // Filter by minimum severity
+    if (this.severityOrder[severity] < this.severityOrder[this.minSeverity]) {
+      return;
+    }
+
+    const payload = {
+      timestamp: new Date().toISOString(),
+      severity,
+      message,
+      context,
+      source: 'loa-beauvoir',
+    };
+
+    // Send to all configured channels
+    await Promise.allSettled(
+      this.channels.map(channel => this.sendToChannel(channel, payload))
+    );
+  }
+
+  private async sendToChannel(
+    channel: NotificationChannel,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    switch (channel.type) {
+      case 'slack':
+        await this.sendSlack(channel, payload);
+        break;
+      case 'discord':
+        await this.sendDiscord(channel, payload);
+        break;
+      case 'webhook':
+        await this.sendWebhook(channel, payload);
+        break;
+      case 'log':
+        console.log(`[${payload.severity}] ${payload.message}`, payload.context);
+        break;
+    }
+  }
+
+  private async sendSlack(channel: NotificationChannel, payload: Record<string, unknown>): Promise<void> {
+    if (!channel.url) return;
+    const emoji = payload.severity === 'critical' ? '🚨' :
+                  payload.severity === 'warning' ? '⚠️' : 'ℹ️';
+    await fetch(channel.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `${emoji} *${payload.severity?.toString().toUpperCase()}*: ${payload.message}`,
+        attachments: payload.context ? [{
+          fields: Object.entries(payload.context as Record<string, unknown>).map(([k, v]) => ({
+            title: k,
+            value: String(v),
+            short: true,
+          })),
+        }] : undefined,
+      }),
+    });
+  }
+
+  private async sendDiscord(channel: NotificationChannel, payload: Record<string, unknown>): Promise<void> {
+    if (!channel.url) return;
+    const color = payload.severity === 'critical' ? 0xff0000 :
+                  payload.severity === 'warning' ? 0xffaa00 : 0x00aaff;
+    await fetch(channel.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        embeds: [{
+          title: `${payload.severity?.toString().toUpperCase()}: Loa Beauvoir`,
+          description: payload.message,
+          color,
+          fields: payload.context ? Object.entries(payload.context as Record<string, unknown>).map(([k, v]) => ({
+            name: k,
+            value: String(v),
+            inline: true,
+          })) : undefined,
+          timestamp: payload.timestamp,
+        }],
+      }),
+    });
+  }
+
+  private async sendWebhook(channel: NotificationChannel, payload: Record<string, unknown>): Promise<void> {
+    if (!channel.url) return;
+    await fetch(channel.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+}
+```
+
+### 10.6 Meta-Scheduler Monitoring
+
+**Purpose**: Detect and recover from scheduler stalls.
+
+```typescript
+// deploy/loa-identity/scheduler/meta-monitor.ts
+
+interface MetaMonitorConfig {
+  checkIntervalMinutes: number;    // Default: 15
+  stallThresholdMinutes: number;   // Default: 30
+  restartCommand: string;          // Default: systemctl restart loa-scheduler
+  ownershipMode: 'standalone' | 'systemd_notify';  // Default: standalone
+  gracePeriodSeconds: number;      // Default: 30 (SIGTERM before SIGKILL)
+}
+
+class MetaSchedulerMonitor {
+  private config: MetaMonitorConfig;
+  private heartbeatPath = '/workspace/.loa/scheduler-heartbeat';
+  private auditLog: AuditLogger;
+
+  constructor(config?: Partial<MetaMonitorConfig>) {
+    this.config = {
+      checkIntervalMinutes: config?.checkIntervalMinutes ?? 15,
+      stallThresholdMinutes: config?.stallThresholdMinutes ?? 30,
+      restartCommand: config?.restartCommand ?? 'systemctl restart loa-scheduler',
+    };
+    this.auditLog = new AuditLogger('/workspace/.loa/meta-monitor.log');
+  }
+
+  /**
+   * Check scheduler health (called by external cron/systemd timer)
+   */
+  async check(): Promise<{ healthy: boolean; stalledMinutes: number; action: string | null }> {
+    const heartbeat = await this.readHeartbeat();
+
+    if (!heartbeat) {
+      await this.auditLog.log('scheduler_check', { status: 'no_heartbeat' });
+      return {
+        healthy: false,
+        stalledMinutes: Infinity,
+        action: 'No heartbeat file found - scheduler may never have started',
+      };
+    }
+
+    const stalledMinutes = (Date.now() - heartbeat.getTime()) / (1000 * 60);
+
+    if (stalledMinutes > this.config.stallThresholdMinutes) {
+      await this.auditLog.log('scheduler_stall_detected', {
+        lastHeartbeat: heartbeat.toISOString(),
+        stalledMinutes,
+      });
+
+      // Attempt auto-restart
+      try {
+        await this.restartScheduler();
+        await this.auditLog.log('scheduler_restarted', { success: true });
+        await this.writeToNotes(
+          `[META-MONITOR] Scheduler stalled ${stalledMinutes.toFixed(0)}min, auto-restarted`
+        );
+        return {
+          healthy: false,
+          stalledMinutes,
+          action: 'Auto-restarted scheduler',
+        };
+      } catch (e) {
+        await this.auditLog.log('scheduler_restart_failed', { error: String(e) });
+        await this.writeToNotes(
+          `[META-MONITOR] Scheduler restart FAILED - manual intervention needed`
+        );
+        return {
+          healthy: false,
+          stalledMinutes,
+          action: `Restart failed: ${e}`,
+        };
+      }
+    }
+
+    return { healthy: true, stalledMinutes, action: null };
+  }
+
+  /**
+   * Called by scheduler to update heartbeat
+   */
+  async recordHeartbeat(): Promise<void> {
+    await fs.writeFile(this.heartbeatPath, new Date().toISOString());
+  }
+
+  private async readHeartbeat(): Promise<Date | null> {
+    try {
+      const content = await fs.readFile(this.heartbeatPath, 'utf-8');
+      return new Date(content.trim());
+    } catch {
+      return null;
+    }
+  }
+
+  private async restartScheduler(): Promise<void> {
+    await exec(this.config.restartCommand);
+  }
+
+  private async writeToNotes(message: string): Promise<void> {
+    const timestamp = new Date().toISOString();
+    const entry = `| ${timestamp} | meta-monitor | ${message} |`;
+    await fs.appendFile('/workspace/grimoires/loa/NOTES.md', entry + '\n');
+  }
+}
+```
+
+### 10.7 Context Threshold Alerts
+
+**Purpose**: Warn before context compaction occurs.
+
+```typescript
+// deploy/loa-identity/memory/context-tracker.ts
+
+interface ContextThresholds {
+  warmPercent: number;     // Default: 60
+  wrapUpPercent: number;   // Default: 70
+  imminentPercent: number; // Default: 80
+}
+
+interface ContextStatus {
+  usedTokens: number;
+  maxTokens: number;
+  usagePercent: number;
+  status: 'ok' | 'warm' | 'wrap_up' | 'imminent';
+  message: string | null;
+}
+
+class ContextTracker {
+  private thresholds: ContextThresholds;
+  private maxTokens: number;
+  private lastWarningPercent = 0;
+
+  constructor(maxTokens: number, thresholds?: Partial<ContextThresholds>) {
+    this.maxTokens = maxTokens;
+    this.thresholds = {
+      warmPercent: thresholds?.warmPercent ?? 60,
+      wrapUpPercent: thresholds?.wrapUpPercent ?? 70,
+      imminentPercent: thresholds?.imminentPercent ?? 80,
+    };
+  }
+
+  /**
+   * Check context usage and emit warnings as needed
+   */
+  check(usedTokens: number): ContextStatus {
+    const usagePercent = (usedTokens / this.maxTokens) * 100;
+
+    let status: ContextStatus['status'] = 'ok';
+    let message: string | null = null;
+
+    if (usagePercent >= this.thresholds.imminentPercent) {
+      status = 'imminent';
+      if (this.lastWarningPercent < this.thresholds.imminentPercent) {
+        message = `⚠️ Context ${usagePercent.toFixed(0)}% - compaction imminent, save progress`;
+      }
+    } else if (usagePercent >= this.thresholds.wrapUpPercent) {
+      status = 'wrap_up';
+      if (this.lastWarningPercent < this.thresholds.wrapUpPercent) {
+        message = `⚠️ Context ${usagePercent.toFixed(0)}% - consider wrapping up current task`;
+      }
+    } else if (usagePercent >= this.thresholds.warmPercent) {
+      status = 'warm';
+      if (this.lastWarningPercent < this.thresholds.warmPercent) {
+        message = `ℹ️ Context ${usagePercent.toFixed(0)}% - getting warm`;
+      }
+    }
+
+    // Update last warning level
+    if (usagePercent >= this.thresholds.imminentPercent) {
+      this.lastWarningPercent = this.thresholds.imminentPercent;
+    } else if (usagePercent >= this.thresholds.wrapUpPercent) {
+      this.lastWarningPercent = this.thresholds.wrapUpPercent;
+    } else if (usagePercent >= this.thresholds.warmPercent) {
+      this.lastWarningPercent = this.thresholds.warmPercent;
+    }
+
+    return {
+      usedTokens,
+      maxTokens: this.maxTokens,
+      usagePercent,
+      status,
+      message,
+    };
+  }
+
+  /**
+   * Reset warning state (call on session start)
+   */
+  reset(): void {
+    this.lastWarningPercent = 0;
+  }
+}
+```
+
+### 10.8 Non-LLM Health Checks
+
+**Purpose**: Reduce API calls by using shell scripts for routine health checks.
+
+```bash
+#!/bin/bash
+# deploy/loa-identity/scripts/health-check.sh
+#
+# PURPOSE: Non-LLM health check to reduce API usage
+# OWNER: operational-hardening
+# DOES NOT: Invoke LLM for routine status checks
+#
+# Exit codes:
+#   0 = healthy
+#   1 = unhealthy (requires LLM triage)
+#   2 = degraded (log warning, continue)
+#   124 = timeout (script took too long)
+
+set -euo pipefail
+
+# Timeout protection (Flatline Review IMP-005/SKP-005)
+HEALTH_CHECK_TIMEOUT="${HEALTH_CHECK_TIMEOUT:-30}"
+
+# Self-timeout wrapper - re-exec with timeout if not already wrapped
+if [[ "${HEALTH_CHECK_WRAPPED:-}" != "true" ]]; then
+    export HEALTH_CHECK_WRAPPED=true
+    exec timeout "$HEALTH_CHECK_TIMEOUT" "$0" "$@"
+fi
+
+HEALTH_LOG="/workspace/.loa/health.log"
+ANOMALY_FILE="/workspace/.loa/health-anomaly.json"
+
+log() {
+    echo "[$(date -Iseconds)] $*" >> "$HEALTH_LOG"
+}
+
+check_r2_mount() {
+    if ! mount | grep -q s3fs; then
+        echo '{"check":"r2_mount","status":"failed","message":"R2 not mounted"}' > "$ANOMALY_FILE"
+        return 1
+    fi
+    return 0
+}
+
+check_wal_size() {
+    local size_mb
+    size_mb=$(du -sm /data/wal/ 2>/dev/null | cut -f1 || echo 0)
+    if [ "$size_mb" -gt 50 ]; then
+        echo '{"check":"wal_size","status":"warning","size_mb":'$size_mb'}' > "$ANOMALY_FILE"
+        return 2
+    fi
+    return 0
+}
+
+check_scheduler_heartbeat() {
+    local heartbeat_file="/workspace/.loa/scheduler-heartbeat"
+    if [ ! -f "$heartbeat_file" ]; then
+        echo '{"check":"scheduler","status":"failed","message":"No heartbeat"}' > "$ANOMALY_FILE"
+        return 1
+    fi
+
+    local age_minutes
+    age_minutes=$(( ($(date +%s) - $(date -r "$heartbeat_file" +%s)) / 60 ))
+    if [ "$age_minutes" -gt 30 ]; then
+        echo '{"check":"scheduler","status":"failed","stalled_minutes":'$age_minutes'}' > "$ANOMALY_FILE"
+        return 1
+    fi
+    return 0
+}
+
+check_grimoire_integrity() {
+    local manifest="/workspace/grimoires/loa/.loa-state-manifest.json"
+    if [ ! -f "$manifest" ]; then
+        echo '{"check":"integrity","status":"warning","message":"No manifest"}' > "$ANOMALY_FILE"
+        return 2
+    fi
+    return 0
+}
+
+# Run all checks
+rm -f "$ANOMALY_FILE"
+exit_code=0
+
+log "Starting health check"
+
+if ! check_r2_mount; then
+    log "FAIL: R2 mount check"
+    exit_code=1
+fi
+
+if ! check_wal_size; then
+    log "WARN: WAL size check"
+    [ "$exit_code" -eq 0 ] && exit_code=2
+fi
+
+if ! check_scheduler_heartbeat; then
+    log "FAIL: Scheduler heartbeat"
+    exit_code=1
+fi
+
+if ! check_grimoire_integrity; then
+    log "WARN: Grimoire integrity"
+    [ "$exit_code" -eq 0 ] && exit_code=2
+fi
+
+if [ "$exit_code" -eq 0 ]; then
+    log "All checks passed"
+elif [ "$exit_code" -eq 1 ]; then
+    log "UNHEALTHY - LLM triage required"
+elif [ "$exit_code" -eq 2 ]; then
+    log "DEGRADED - continuing with warnings"
+fi
+
+exit $exit_code
+```
+
+### 10.9 Configuration Schema
+
+```yaml
+# .loa.config.yaml - Operational Hardening Section
+
+operational_hardening:
+  # FR-6: Subagent Timeout Enforcement
+  subagent_timeout:
+    min_minutes: 30          # Minimum for trusted models
+    warn_below_minutes: 10   # Log warning if below this
+    hard_floor_minutes: 3    # Block spawn if below this
+    trusted_models:
+      - 'claude-opus'
+      - 'opus-4'
+      - 'codex-max'
+
+  # FR-7: Weekly Bloat Audit
+  bloat_audit:
+    enabled: true
+    schedule: "0 0 * * 0"    # Sunday midnight UTC
+    thresholds:
+      crons: { warn: 15, critical: 20 }
+      scripts: { warn: 40, critical: 50 }
+      state_file_mb: { warn: 5, critical: 10 }
+
+  # FR-8: MECE Validation
+  mece_validation:
+    enabled: true
+    require_purpose_header: true
+    block_overlapping_crons: true
+    script_similarity_threshold: 0.7
+
+  # FR-9: Meta-Scheduler Monitoring
+  meta_monitor:
+    enabled: true
+    check_interval_minutes: 15
+    stall_threshold_minutes: 30
+    auto_restart: true
+    ownership_mode: standalone  # standalone | systemd_notify
+    grace_period_seconds: 30    # SIGTERM before SIGKILL
+
+  # Notifications (Flatline Review high-consensus)
+  notifications:
+    enabled: true
+    min_severity: warning  # info | warning | critical
+    channels:
+      - type: log  # Always log
+      # - type: slack
+      #   url: "https://hooks.slack.com/services/..."
+      # - type: discord
+      #   url: "https://discord.com/api/webhooks/..."
+      # - type: webhook
+      #   url: "https://your-webhook-endpoint.com/alerts"
+
+  # FR-10: Context Tracking
+  context_tracking:
+    enabled: true
+    thresholds:
+      warm_percent: 60
+      wrap_up_percent: 70
+      imminent_percent: 80
+
+  # FR-11: Non-LLM Health Checks
+  health_checks:
+    use_shell_script: true
+    llm_triage_on_anomaly: true
+    interval_minutes: 5
+    timeout_seconds: 30  # Self-timeout for health script
+```
+
+### 10.10 Operational Hardening Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    OPERATIONAL HARDENING DATA FLOW                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Subagent Spawn Request                                                     │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────┐    ┌─────────────────┐                                │
+│  │TimeoutEnforcer  │───►│ Audit Log       │                                │
+│  │- Check floor    │    │ timeout_*       │                                │
+│  │- Adjust trusted │    └─────────────────┘                                │
+│  └────────┬────────┘                                                        │
+│           │ Pass/Fail                                                       │
+│           ▼                                                                 │
+│                                                                             │
+│  New Task Creation Request                                                  │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────┐    ┌─────────────────┐                                │
+│  │ MECEValidator   │───►│ Audit Log       │                                │
+│  │- Check overlap  │    │ mece_*          │                                │
+│  │- Check similar  │    └─────────────────┘                                │
+│  │- Require purpose│                                                        │
+│  └────────┬────────┘                                                        │
+│           │ Pass/Fail                                                       │
+│           ▼                                                                 │
+│                                                                             │
+│  ══════════════════════════════════════════════════════════════════════════ │
+│  SCHEDULED (via Scheduler)                                                  │
+│  ══════════════════════════════════════════════════════════════════════════ │
+│                                                                             │
+│  Every 5 minutes:                                                           │
+│  ┌─────────────────┐    ┌─────────────────┐                                │
+│  │ health-check.sh │───►│ anomaly.json    │                                │
+│  │ (Non-LLM)       │    └────────┬────────┘                                │
+│  └─────────────────┘             │ if unhealthy                            │
+│                                  ▼                                          │
+│                         ┌─────────────────┐                                │
+│                         │ LLM Triage      │                                │
+│                         │ (on anomaly)    │                                │
+│                         └─────────────────┘                                │
+│                                                                             │
+│  Every 15 minutes:                                                          │
+│  ┌─────────────────┐    ┌─────────────────┐                                │
+│  │MetaMonitor.check│───►│ Audit Log       │                                │
+│  │- Read heartbeat │    │ scheduler_*     │                                │
+│  │- Auto-restart   │    └─────────────────┘                                │
+│  └─────────────────┘                                                        │
+│                                                                             │
+│  Every Sunday:                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐   ┌─────────────────┐         │
+│  │BloatAuditor.run │───►│ Audit Log       │──►│ NOTES.md        │         │
+│  │- Count crons    │    │ bloat_audit     │   │ (summary)       │         │
+│  │- Count scripts  │    └─────────────────┘   └─────────────────┘         │
+│  │- Find orphans   │                                                        │
+│  │- Check sizes    │                                                        │
+│  └─────────────────┘                                                        │
+│                                                                             │
+│  On every session:                                                          │
+│  ┌─────────────────┐                                                        │
+│  │ContextTracker   │──► Emit warnings at 60/70/80% thresholds              │
+│  └─────────────────┘                                                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Appendix D: Operational Hardening Integration Points
+
+### D.1 Integration with Scheduler (Sprint 11)
+
+The operational hardening components integrate with the existing scheduler:
+
+```typescript
+// deploy/loa-identity/scheduler/scheduler.ts (additions)
+
+class Scheduler {
+  private timeoutEnforcer: TimeoutEnforcer;
+  private meceValidator: MECEValidator;
+  private bloatAuditor: BloatAuditor;
+  private metaMonitor: MetaSchedulerMonitor;
+
+  constructor() {
+    // Load config from .loa.config.yaml
+    const config = this.loadConfig();
+
+    this.timeoutEnforcer = new TimeoutEnforcer(config.subagent_timeout);
+    this.meceValidator = new MECEValidator();
+    this.bloatAuditor = new BloatAuditor(config.bloat_audit.thresholds);
+    this.metaMonitor = new MetaSchedulerMonitor(config.meta_monitor);
+  }
+
+  /**
+   * Hook: Before spawning subagent
+   */
+  async beforeSubagentSpawn(modelId: string, timeoutMinutes: number): Promise<number> {
+    const result = await this.timeoutEnforcer.validateTimeout(modelId, timeoutMinutes);
+    return result.adjustedMinutes;
+  }
+
+  /**
+   * Hook: Before creating scheduled task
+   */
+  async beforeTaskCreate(candidate: TaskCandidate): Promise<void> {
+    const result = await this.meceValidator.validate(candidate);
+    if (!result.valid) {
+      throw new Error(
+        'MECE validation failed:\n' +
+        result.violations.map(v => `- ${v.rule}: ${v.suggestion}`).join('\n')
+      );
+    }
+  }
+
+  /**
+   * Run scheduled jobs
+   */
+  async runScheduledJobs(): Promise<void> {
+    // Record heartbeat for meta-monitoring
+    await this.metaMonitor.recordHeartbeat();
+
+    // ... existing job execution
+  }
+}
+```
+
+### D.2 Integration with Session Memory (Sprint 7)
+
+Context tracking integrates with the session memory manager:
+
+```typescript
+// deploy/loa-identity/memory/session-manager.ts (additions)
+
+class SessionMemoryManager {
+  private contextTracker: ContextTracker;
+
+  constructor() {
+    // ... existing initialization
+    this.contextTracker = new ContextTracker(200000); // 200K token limit
+  }
+
+  async capture(entry: MemoryEntry): Promise<string | null> {
+    // ... existing capture logic
+
+    // Check context usage after capture
+    const tokenCount = await this.estimateTokenCount();
+    const status = this.contextTracker.check(tokenCount);
+
+    if (status.message) {
+      console.log(status.message);
+      await this.appendToNotes(`| ${new Date().toISOString()} | context | ${status.message} |`);
+    }
+
+    return entryId;
+  }
+}
+```
 
 ---
 

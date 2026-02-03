@@ -53,3 +53,15 @@ export {
   type QueuedConsolidation,
   type ConsolidationQueueConfig,
 } from './consolidation-queue.js';
+
+// Context Tracking (FR-10)
+export {
+  ContextTracker,
+  createContextTracker,
+  createContextTrackerFromEnv,
+  type ContextThresholds,
+  type ContextStatus,
+  type ContextStatusLevel,
+  type ContextCheckResult,
+  type ContextHistoryEntry,
+} from './context-tracker.js';
