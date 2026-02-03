@@ -187,6 +187,42 @@ if (process.env.CLAWDBOT_GATEWAY_TOKEN) {
     config.gateway.auth.token = process.env.CLAWDBOT_GATEWAY_TOKEN;
 }
 
+// Allow insecure auth for dev mode
+if (process.env.CLAWDBOT_DEV_MODE === 'true') {
+    config.gateway.controlUi = config.gateway.controlUi || {};
+    config.gateway.controlUi.allowInsecureAuth = true;
+}
+
+// =============================================================================
+// CHANNEL CONFIGURATION - Telegram, Discord, Slack
+// Required for peripherals to work
+// =============================================================================
+
+// Telegram configuration
+if (process.env.TELEGRAM_BOT_TOKEN) {
+    config.channels.telegram = config.channels.telegram || {};
+    config.channels.telegram.botToken = process.env.TELEGRAM_BOT_TOKEN;
+    config.channels.telegram.enabled = true;
+    console.log('[loa] Telegram channel configured');
+}
+
+// Discord configuration
+if (process.env.DISCORD_BOT_TOKEN) {
+    config.channels.discord = config.channels.discord || {};
+    config.channels.discord.token = process.env.DISCORD_BOT_TOKEN;
+    config.channels.discord.enabled = true;
+    console.log('[loa] Discord channel configured');
+}
+
+// Slack configuration
+if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN) {
+    config.channels.slack = config.channels.slack || {};
+    config.channels.slack.botToken = process.env.SLACK_BOT_TOKEN;
+    config.channels.slack.appToken = process.env.SLACK_APP_TOKEN;
+    config.channels.slack.enabled = true;
+    console.log('[loa] Slack channel configured');
+}
+
 // Write updated config
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 console.log('[loa] Configuration updated');
@@ -268,6 +304,10 @@ install_clawdbot
 # Clean up stale locks
 rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
 rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
+
+# Fix any invalid config keys (e.g., from old backups with deprecated fields)
+echo "[loa] Running doctor to fix any config issues..."
+clawdbot doctor --fix 2>/dev/null || true
 
 # Start gateway
 echo "[loa] Starting gateway on port 18789..."
