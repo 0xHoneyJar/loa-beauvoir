@@ -59,17 +59,11 @@ RUN npm install -g pnpm@10
 # Stage 2: Loa Optimizations (Python tools)
 # -----------------------------------------------------------------------------
 
-# NOTE: Rust tools (ck-search, beads_rust) skipped for now
+# NOTE: Heavy optimizations skipped to keep image deployable:
+# - sentence-transformers: ~4GB with PyTorch+CUDA - too large for Cloudflare registry
 # - ck-search: ONNX Runtime linking fails in container build
-# - beads_rust: Not published to crates.io (rusty-beads exists but different)
-# TODO: Revisit when pre-built binaries or proper crate names available
-# The core Loa functionality works without these - they are optimizations.
-
-# Install Python packages for Memory Stack
-# WARNING: This adds ~2-3GB for PyTorch + transformers
-# Benefits: Semantic memory recall, NOTES.md sync
-RUN pip3 install --no-cache-dir sentence-transformers \
-    && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')"
+# - beads_rust: Not published to crates.io
+# TODO: Add memory stack via runtime install or pre-computed embeddings
 
 # Install patchright for Flatline NotebookLM integration
 # Benefits: Query NotebookLM notebooks for domain knowledge
@@ -135,7 +129,7 @@ ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build timestamp to force fresh builds when needed
-ARG BUILD_TS=20260203-0400
+ARG BUILD_TS=20260203-0500
 
 # NO ENTRYPOINT - The base image handles SDK communication on port 3000
 # The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
