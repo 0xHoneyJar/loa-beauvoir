@@ -68,13 +68,12 @@ RUN npm install -g pnpm@10
 # Install Python packages for Memory Stack
 # WARNING: This adds ~2-3GB for PyTorch + transformers
 # Benefits: Semantic memory recall, NOTES.md sync
-RUN pip3 install --no-cache-dir --break-system-packages \
-    sentence-transformers \
+RUN pip3 install --no-cache-dir sentence-transformers \
     && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')"
 
 # Install patchright for Flatline NotebookLM integration
 # Benefits: Query NotebookLM notebooks for domain knowledge
-RUN pip3 install --no-cache-dir --break-system-packages patchright \
+RUN pip3 install --no-cache-dir patchright \
     && python3 -m patchright install chromium
 
 # -----------------------------------------------------------------------------
@@ -136,7 +135,7 @@ ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build timestamp to force fresh builds when needed
-ARG BUILD_TS=20260203-0300
+ARG BUILD_TS=20260203-0400
 
 # NO ENTRYPOINT - The base image handles SDK communication on port 3000
 # The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
