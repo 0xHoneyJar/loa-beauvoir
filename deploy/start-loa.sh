@@ -43,7 +43,16 @@ export CLAUDE_CONFIG_DIR="/workspace/.claude"
 # =============================================================================
 # BEAUVOIR STATE RECOVERY PROTOCOL
 # "I exist to help. Stopping and waiting for permission to exist is not helpful."
+#
+# Recovery Engine v2.0: Uses deploy/loa-identity/recovery/
+# - Multi-source fallback: R2 → Git → Template
+# - Ed25519 signature verification + SHA-256 checksums
+# - Loop detection with configurable thresholds
 # =============================================================================
+
+# Environment variables for recovery tuning
+export BEAUVOIR_LOOP_MAX_FAILURES="${BEAUVOIR_LOOP_MAX_FAILURES:-3}"
+export BEAUVOIR_LOOP_WINDOW_MINUTES="${BEAUVOIR_LOOP_WINDOW_MINUTES:-10}"
 
 log_recovery() {
     local action="$1"
@@ -57,8 +66,32 @@ log_recovery() {
     echo "[loa] Recovery: $action"
 }
 
-# Check Loa state integrity
-check_state_integrity() {
+# Try to use the new TypeScript recovery engine
+run_recovery_engine() {
+    local recovery_script="$LOA_WORKSPACE/deploy/loa-identity/recovery/run.ts"
+
+    if [ ! -f "$recovery_script" ]; then
+        echo "[loa] Recovery engine not found, using legacy recovery"
+        return 1
+    fi
+
+    echo "[loa] Running Beauvoir Recovery Engine v2.0..."
+
+    # Try tsx first (fastest), then node with ts-node
+    if command -v tsx &>/dev/null; then
+        tsx "$recovery_script" && return 0
+    elif command -v node &>/dev/null && command -v ts-node &>/dev/null; then
+        node --experimental-specifier-resolution=node \
+             --loader ts-node/esm \
+             "$recovery_script" && return 0
+    fi
+
+    echo "[loa] TypeScript runtime not available, using legacy recovery"
+    return 1
+}
+
+# Legacy recovery (fallback if TypeScript engine unavailable)
+legacy_check_state_integrity() {
     local missing=0
 
     # Critical files for Beauvoir identity
@@ -69,8 +102,7 @@ check_state_integrity() {
     echo $missing
 }
 
-# Restore from R2 backup (hot state)
-restore_from_r2() {
+legacy_restore_from_r2() {
     if [ -d "$BACKUP_DIR/grimoires/loa" ]; then
         echo "[loa] Restoring grimoires from R2 backup..."
         cp -a "$BACKUP_DIR/grimoires/loa/." "$GRIMOIRE_DIR/" 2>/dev/null || true
@@ -80,16 +112,25 @@ restore_from_r2() {
     return 1
 }
 
-# State integrity check and auto-recovery
-STATE_ISSUES=$(check_state_integrity)
-if [ "$STATE_ISSUES" -gt 0 ]; then
-    echo "[loa] State issues detected (code: $STATE_ISSUES), initiating recovery..."
+# Run recovery
+if ! run_recovery_engine; then
+    # Fallback to legacy recovery
+    STATE_ISSUES=$(legacy_check_state_integrity)
+    if [ "$STATE_ISSUES" -gt 0 ]; then
+        echo "[loa] State issues detected (code: $STATE_ISSUES), initiating recovery..."
 
-    # Try R2 first (hot backup)
-    if ! restore_from_r2; then
-        echo "[loa] R2 backup not available, using container defaults"
-        log_recovery "Using container defaults (no backup available)"
+        # Try R2 first (hot backup)
+        if ! legacy_restore_from_r2; then
+            echo "[loa] R2 backup not available, using container defaults"
+            log_recovery "Using container defaults (no backup available)"
+        fi
     fi
+fi
+
+# Check if in degraded mode
+if [ "${BEAUVOIR_DEGRADED:-0}" = "1" ]; then
+    echo "[loa] WARNING: Running in DEGRADED MODE"
+    echo "[loa] Some features may be limited until recovery succeeds"
 fi
 
 # Restore gateway config from R2 backup if available

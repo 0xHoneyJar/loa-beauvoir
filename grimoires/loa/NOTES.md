@@ -6,9 +6,11 @@
 ## Active Sub-Goals
 <!-- Current objectives being pursued -->
 - **Infrastructure PRD complete**: Loa Cloud Stack (loa-beauvoir) v0.2.0
-- **Resilience PRD created**: Beauvoir Personality & Resilience v0.1.0
-- **SDD complete**: System architecture designed v0.1.0
-- **Sprint Plan complete**: 5 sprints, 35 tasks total
+- **Resilience PRD created**: Beauvoir Personality & Resilience v0.2.0 (Flatline reviewed)
+- **Resilience SDD created**: beauvoir-resilience-sdd.md v0.2.0 (Flatline reviewed)
+- **Resilience Sprint Plan created**: beauvoir-resilience-sprint.md v0.2.0 - 6 sprints, 59 tasks (Flatline reviewed)
+- **Infrastructure SDD complete**: System architecture designed v0.1.0
+- **Sprint Plan complete**: 5 sprints, 35 tasks total (cycle-001)
 - **All sprints implemented**: Foundation, Container, Persistence, Deployment, Learning
 - **Container deployed**: Gateway connects, Telegram pending pairing approval
 - **Identity created**: BEAUVOIR.md with principle-driven personality
@@ -36,6 +38,11 @@
 | 2026-02-03 | claude-opus-4.5 | Updated Loa v1.20.0 → v1.21.0 (Flatline Protocol multi-model review) |
 | 2026-02-03 | claude-opus-4.5 | Added Loa optimizations to Dockerfile: Rust/cargo, ck-search, beads_rust, memory stack, patchright |
 | 2026-02-03 | claude-opus-4.5 | Successfully deployed container to Cloudflare - moved clawdbot to runtime install to fix registry push timeouts |
+| 2026-02-03 | claude-opus-4.5 | Updated Resilience PRD to v0.2.0 with Flatline Protocol feedback |
+| 2026-02-03 | claude-opus-4.5 | Created Beauvoir Resilience SDD v0.1.0 - full architecture for identity, memory, recovery, self-repair |
+| 2026-02-03 | claude-opus-4.5 | Updated Resilience SDD to v0.2.0 with Flatline findings: Ed25519 signing, WAL compaction, lexical fallback, entropy PII detection |
+| 2026-02-03 | claude-opus-4.5 | Created Beauvoir Resilience Sprint Plan - 6 sprints (46 tasks), MVP at sprint 9, registered cycle-002 in ledger |
+| 2026-02-03 | claude-opus-4.5 | Updated Sprint Plan to v0.2.0 with Flatline findings: key lifecycle, SHA-256 verification, lexical fallback tests, sandboxed repairs, scheduler circuit breakers (59 tasks) |
 
 ## Decision Log
 <!-- Major decisions with rationale -->
