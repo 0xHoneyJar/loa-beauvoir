@@ -32,7 +32,7 @@
   "build": {
     "command": "npm run build",
   },
-  // Container configuration for the Moltbot sandbox
+  // Container configuration for the Loa Cloud Stack
   "containers": [
     {
       "class_name": "Sandbox",
