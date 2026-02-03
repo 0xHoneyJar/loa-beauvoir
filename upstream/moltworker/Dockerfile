@@ -71,10 +71,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && rustc --version \
     && cargo --version
 
-# Install ck-search (semantic code search)
-# Benefits: 80-90% faster searches, Ghost Feature detection
-RUN cargo install ck-search \
-    && ck --version
+# NOTE: ck-search skipped - ONNX Runtime linking fails in this container environment
+# TODO: Revisit when ck-search releases pre-built binaries or fixes ONNX deps
+# Benefits when available: 80-90% faster searches, Ghost Feature detection
+# RUN cargo install ck-search && ck --version
 
 # Install beads_rust (persistent task graph)
 # Benefits: Cross-session task persistence, dependency tracking
@@ -152,7 +152,7 @@ ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build timestamp to force fresh builds when needed
-ARG BUILD_TS=20260203-0100
+ARG BUILD_TS=20260203-0200
 
 # NO ENTRYPOINT - The base image handles SDK communication on port 3000
 # The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
