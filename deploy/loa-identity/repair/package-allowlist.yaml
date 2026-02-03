@@ -1,0 +1,78 @@
+# Package Allowlist for Self-Repair
+# This file MUST be signed with Ed25519 before use
+# Version: 1.0.0
+
+version: 1
+
+# NPM packages that can be auto-installed
+npm:
+  # Core runtime
+  - name: typescript
+    version: "5.*"
+    sha256: "" # Populated during signing
+
+  - name: tsx
+    version: "4.*"
+    sha256: ""
+
+  # Embedding service dependencies
+  - name: sentence-transformers
+    version: "*"
+    sha256: ""
+
+  # Testing frameworks
+  - name: vitest
+    version: "1.*"
+    sha256: ""
+
+  - name: "@vitest/coverage-v8"
+    version: "1.*"
+    sha256: ""
+
+# APT packages (Debian/Ubuntu)
+apt:
+  # Git for version control
+  - name: git
+    version: "*"
+    sha256: ""
+
+  # Python for embedding service
+  - name: python3
+    version: "3.10.*"
+    sha256: ""
+
+  - name: python3-pip
+    version: "*"
+    sha256: ""
+
+  # Build tools
+  - name: build-essential
+    version: "*"
+    sha256: ""
+
+# Explicit command allowlist (prefix matching)
+commands:
+  # NPM operations (scoped to allowed packages)
+  - npm install
+  - npm ci
+  - npm update
+
+  # Python operations
+  - pip install -r
+  - pip3 install -r
+
+  # Git operations (read-only safe)
+  - git clone
+  - git pull
+  - git fetch
+
+  # Health checks
+  - curl -s http://127.0.0.1
+  - wget -q -O-
+
+# Signature will be added by AllowlistSigner
+# signature:
+#   algorithm: ed25519
+#   public_key_id: <key-id>
+#   value: <base64-signature>
+#   signed_at: <ISO timestamp>
