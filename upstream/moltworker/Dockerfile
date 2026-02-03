@@ -59,16 +59,12 @@ RUN npm install -g pnpm@10
 # Stage 2: Loa Optimizations (Python tools)
 # -----------------------------------------------------------------------------
 
-# NOTE: Heavy optimizations skipped to keep image deployable:
-# - sentence-transformers: ~4GB with PyTorch+CUDA - too large for Cloudflare registry
-# - ck-search: ONNX Runtime linking fails in container build
-# - beads_rust: Not published to crates.io
-# TODO: Add memory stack via runtime install or pre-computed embeddings
-
-# Install patchright for Flatline NotebookLM integration
-# Benefits: Query NotebookLM notebooks for domain knowledge
-RUN pip3 install --no-cache-dir patchright \
-    && python3 -m patchright install chromium
+# NOTE: All heavy optimizations skipped due to Cloudflare registry push issues:
+# - sentence-transformers: ~4GB with PyTorch+CUDA - too large
+# - patchright+Chromium: ~300MB - registry token expires during push
+# - ck-search, beads_rust: Build issues
+# TODO: Add via runtime install after initial deployment succeeds
+# Core Loa identity works without these - they are optimizations.
 
 # -----------------------------------------------------------------------------
 # Stage 3: OpenClaw Gateway
@@ -129,7 +125,7 @@ ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build timestamp to force fresh builds when needed
-ARG BUILD_TS=20260203-0500
+ARG BUILD_TS=20260203-0600
 
 # NO ENTRYPOINT - The base image handles SDK communication on port 3000
 # The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
