@@ -73,27 +73,28 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     && rustc --version \
     && cargo --version
 
-# Install ck-search (semantic code search)
+# Install ck-search (semantic code search) - OPTIONAL
 # Benefits: 80-90% faster searches, Ghost Feature detection
-RUN cargo install ck-search \
-    && ck --version
+# Note: May fail on some platforms due to ONNX runtime issues
+RUN cargo install ck-search && ck --version || echo "ck-search installation skipped (optional)"
 
-# Install beads_rust (persistent task graph)
+# Install beads_rust (persistent task graph) - OPTIONAL
 # Benefits: Cross-session task persistence, dependency tracking
-RUN cargo install beads_rust \
-    && br --version
+# Note: Package may not be published on crates.io yet
+RUN cargo install beads_rust && br --version || echo "beads_rust installation skipped (optional)"
 
-# Install Python packages for Memory Stack
+# Install Python packages for Memory Stack - OPTIONAL
 # WARNING: This adds ~2-3GB for PyTorch + transformers
 # Benefits: Semantic memory recall, NOTES.md sync
-RUN pip3 install --no-cache-dir --break-system-packages \
-    sentence-transformers \
-    && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')"
+RUN pip3 install --no-cache-dir sentence-transformers \
+    && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')" \
+    || echo "sentence-transformers installation skipped (optional)"
 
-# Install patchright for Flatline NotebookLM integration
+# Install patchright for Flatline NotebookLM integration - OPTIONAL
 # Benefits: Query NotebookLM notebooks for domain knowledge
-RUN pip3 install --no-cache-dir --break-system-packages patchright \
-    && python3 -m patchright install chromium
+RUN pip3 install --no-cache-dir patchright \
+    && python3 -m patchright install chromium \
+    || echo "patchright installation skipped (optional)"
 
 # -----------------------------------------------------------------------------
 # Stage 2: OpenClaw Gateway
