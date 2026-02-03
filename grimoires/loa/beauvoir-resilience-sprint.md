@@ -1,11 +1,11 @@
 # Sprint Plan: Beauvoir Resilience v0.2.0
 
 > **Status**: Draft
-> **Version**: 0.2.0
+> **Version**: 0.3.0
 > **Created**: 2026-02-03
 > **Updated**: 2026-02-03
-> **PRD Reference**: `grimoires/loa/beauvoir-resilience-prd.md` v0.2.0
-> **SDD Reference**: `grimoires/loa/beauvoir-resilience-sdd.md` v0.2.0
+> **PRD Reference**: `grimoires/loa/prd.md` v0.3.0
+> **SDD Reference**: `grimoires/loa/beauvoir-resilience-sdd.md` v0.3.0
 > **Author**: Claude Opus 4.5
 > **Reviewed**: Flatline Protocol (GPT-5.2 + Opus, 100% agreement)
 
@@ -13,13 +13,14 @@
 
 ## Executive Summary
 
-This sprint plan implements the Beauvoir Personality & Resilience system across 6 sprints (55 tasks). The implementation follows the SDD v0.2.0 architecture with all Flatline Protocol feedback integrated:
+This sprint plan implements the Beauvoir Personality & Resilience system across 7 sprints (73 tasks). The implementation follows the SDD v0.3.0 architecture with all Flatline Protocol feedback and operational hardening integrated:
 
 - **Defense-in-depth**: Ed25519 signing with key lifecycle, single-writer architecture, non-root execution
 - **Resilient memory**: Two-phase consolidation with validated lexical fallback and queue-based degradation
 - **Auto-recovery**: State machine with failure counting, SHA-256 verification, configurable thresholds
 - **Privacy-first**: Entropy-based PII detection with 15+ patterns
 - **Operational safety**: Per-sprint rollback procedures, circuit breakers, scheduler jitter
+- **Operational hardening**: Subagent timeout enforcement, bloat audits, MECE validation (FR-6 to FR-11)
 
 **MVP Milestone**: Sprint 9 (Recovery Engine operational)
 
@@ -35,8 +36,9 @@ This sprint plan implements the Beauvoir Personality & Resilience system across 
 | 9 | Recovery Engine (MVP) | 11 | State machine, SHA-256 verification, loop detection defaults | Sprint 8 |
 | 10 | Self-Repair Engine | 9 | Signed allowlist, sandboxed execution, cryptographic approvals | Sprint 9 |
 | 11 | Integration & Skills | 9 | start-loa.sh, Loa skills, scheduler with circuit breakers | Sprint 10 |
+| 12 | Operational Hardening | 14 | Timeout enforcement, bloat audit, MECE, meta-monitor, context, notifications | Sprint 11 |
 
-**Total**: 59 tasks across 6 sprints
+**Total**: 73 tasks across 7 sprints
 
 ---
 
@@ -257,6 +259,48 @@ This sprint plan implements the Beauvoir Personality & Resilience system across 
 
 ---
 
+## Sprint 12: Operational Hardening
+
+**Goal**: Implement production hardening features from FR-6 through FR-11 to prevent timeout crashes, resource explosion, and task redundancy.
+
+**Rationale**: Operational learnings from production autonomous systems show that without these safeguards, systems degrade through bloat, redundancy, and silent failures.
+
+### Tasks
+
+| ID | Task | Acceptance Criteria | Estimate |
+|----|------|---------------------|----------|
+| 12.1 | Implement TimeoutEnforcer class | Validate timeout before spawn, 30min minimum for trusted models, 3min hard floor, log all configurations | M |
+| 12.2 | Add trusted model detection | Pattern matching for Opus/Codex variants, configurable model list | S |
+| 12.3 | Integrate timeout enforcement with scheduler | Hook into beforeSubagentSpawn, adjust timeout automatically, warn on low values | M |
+| 12.4 | Implement BloatAuditor class | Count crons/scripts, find orphans, detect overlaps, check state size | L |
+| 12.5 | Add weekly bloat audit scheduled task | Cron every Sunday, write to NOTES.md and audit log, remediation guidance | M |
+| 12.6 | Implement MECEValidator class | Check schedule overlap, name similarity, require purpose header | M |
+| 12.7 | Integrate MECE validation with task creation | Hook into beforeTaskCreate, block violating tasks with suggestions | M |
+| 12.8 | Implement MetaSchedulerMonitor | Check heartbeat, detect stalls > 30min, auto-restart, log recovery | M |
+| 12.9 | Create non-LLM health check script | Shell script for R2 mount, WAL size, scheduler heartbeat, integrity | S |
+| 12.10 | Implement ContextTracker class | Track token usage, emit warnings at 60/70/80% thresholds | S |
+| 12.11 | Add .loa.config.yaml operational hardening section | Configuration schema for all FR-6 to FR-11 settings | S |
+| 12.12 | **Implement NotificationSink interface** | Unified alerting for critical events, Slack/Discord/webhook support | M |
+| 12.13 | **Add ownership mode to MetaMonitor** | Prevent systemd conflict, standalone vs systemd_notify modes | S |
+| 12.14 | **Add health script timeout wrapper** | Self-timeout protection (30s default), exit code 124 on timeout | S |
+
+**Deliverables**:
+- `deploy/loa-identity/scheduler/timeout-enforcer.ts`
+- `deploy/loa-identity/scheduler/bloat-auditor.ts`
+- `deploy/loa-identity/scheduler/mece-validator.ts`
+- `deploy/loa-identity/scheduler/meta-monitor.ts`
+- `deploy/loa-identity/scheduler/notification-sink.ts` (Flatline review)
+- `deploy/loa-identity/memory/context-tracker.ts`
+- `deploy/loa-identity/scripts/health-check.sh` (with timeout wrapper)
+- `.loa.config.yaml` (updated with notifications)
+
+**Rollback Procedure**:
+- Disable operational hardening via `.loa.config.yaml` flags
+- Set all `enabled: false` in operational_hardening section
+- Verification: Scheduler runs without hardening checks
+
+---
+
 ## Task Size Legend
 
 | Size | Description | Estimate |
@@ -299,6 +343,16 @@ Sprint 10: Self-Repair Engine ◄─────────────┘
     └──► SelfRepairEngine (uses AllowlistSigner)
            │
 Sprint 11: Integration & Skills ◄───────────┘
+    │
+    └──► Scheduler base + skills
+           │
+Sprint 12: Operational Hardening ◄──────────┘
+    │
+    ├──► TimeoutEnforcer (integrates with scheduler)
+    ├──► BloatAuditor (scheduled task)
+    ├──► MECEValidator (task creation hook)
+    ├──► MetaSchedulerMonitor (watchdog)
+    └──► ContextTracker (memory integration)
 ```
 
 ---
@@ -320,6 +374,11 @@ Sprint 11: Integration & Skills ◄───────────┘
 | **Self-repair supply chain** | 10 | Sandboxed execution, cryptographic approvals, threat model tests |
 | **Scheduler resource contention** | 11 | Circuit breakers, jitter, mutual exclusion, job leases |
 | Signing key distribution | 6 | Public key embedded in image, private via Secrets |
+| **Subagent timeout crashes** | 12 | TimeoutEnforcer with 30min minimum, 3min hard floor |
+| **Cron/script proliferation** | 12 | BloatAuditor weekly audit, 20/50 caps |
+| **Task redundancy/overlap** | 12 | MECEValidator blocks duplicates at creation |
+| **Scheduler silent failures** | 12 | MetaSchedulerMonitor with auto-restart |
+| **Context overflow surprise** | 12 | ContextTracker with 60/70/80% warnings |
 
 ---
 
@@ -335,6 +394,7 @@ Sprint 11: Integration & Skills ◄───────────┘
 | 9 | State machine transitions, failure loop detection, restore integrity, **SHA-256 verification**, **configurable threshold tests** |
 | 10 | Allowlist validation, non-root execution, approval flow, **threat model abuse cases**, **sandbox escape tests** |
 | 11 | End-to-end startup, skill invocation, scheduled task execution, **circuit breaker transitions**, **job mutual exclusion** |
+| 12 | Timeout enforcement edge cases, **bloat detection accuracy**, **MECE overlap detection**, **meta-monitor restart**, **context threshold warnings** |
 
 ### Integration Tests
 
@@ -345,6 +405,10 @@ Sprint 11: Integration & Skills ◄───────────┘
 - **Embedding service outage → queue → recovery flow**
 - **WAL segment rotation under load**
 - **Scheduler circuit breaker open/half-open/closed transitions**
+- **Timeout enforcement with model detection**
+- **Bloat audit finding orphaned scripts**
+- **MECE validation blocking overlapping crons**
+- **Meta-monitor auto-restart on stall**
 
 ### Security Tests
 
@@ -373,6 +437,16 @@ Sprint 11: Integration & Skills ◄───────────┘
 - [ ] Lexical fallback golden tests passing
 - [ ] Threat model tests passing
 
+### Production Hardening (Sprint 12 Complete)
+- [ ] Zero timeout-related subagent crashes (FR-6)
+- [ ] Weekly bloat audit runs automatically (FR-7)
+- [ ] Cron count stays below 20, script count below 50 (FR-7)
+- [ ] No MECE violation incidents (FR-8)
+- [ ] Scheduler stalls detected and auto-recovered (FR-9)
+- [ ] Context warnings emitted at 60/70/80% thresholds (FR-10)
+- [ ] Non-LLM health checks reduce API calls by 50%+ (FR-11)
+- [ ] .loa.config.yaml operational hardening section documented
+
 ---
 
 ## Appendix A: File Structure
@@ -387,7 +461,8 @@ deploy/loa-identity/
 │   ├── consolidation-engine.ts
 │   ├── consolidation-queue.ts
 │   ├── embedding-client.ts
-│   └── quality-gates.ts
+│   ├── quality-gates.ts
+│   └── context-tracker.ts
 ├── recovery/
 │   ├── recovery-engine.ts
 │   ├── r2-client.ts
@@ -408,7 +483,14 @@ deploy/loa-identity/
 │   └── audit-logger.ts
 ├── scheduler/
 │   ├── scheduler.ts
-│   └── circuit-breaker.ts
+│   ├── circuit-breaker.ts
+│   ├── timeout-enforcer.ts
+│   ├── bloat-auditor.ts
+│   ├── mece-validator.ts
+│   ├── meta-monitor.ts
+│   └── notification-sink.ts
+├── scripts/
+│   └── health-check.sh
 ├── embedding-service/
 │   ├── main.py
 │   └── requirements.txt
@@ -451,10 +533,10 @@ scripts/
 
 ## Appendix B: Flatline Protocol Review
 
-**Review Date**: 2026-02-03
+**Review Date**: 2026-02-03 (v0.2.0), 2026-02-03 (v0.3.0 operational hardening)
 **Models**: Claude Opus 4.5 + GPT-5.2
 **Agreement**: 100%
-**Cost**: ~$0.75
+**Cost**: ~$0.75 (v0.2.0)
 
 ### High Consensus Improvements (Integrated)
 
@@ -478,6 +560,29 @@ scripts/
 | SKP-010 | Self-repair RCE/supply-chain risk | Added sandboxed execution, cryptographic approvals, threat model tests |
 | JSON canon | Inconsistent serialization | Adopted RFC 8785 JCS standard with single shared library |
 | flock/fsync | Filesystem compatibility | Documented supported filesystems, added PID lock, integration test matrix |
+
+### Operational Hardening Additions (v0.3.0)
+
+Based on PRD v0.3.0 FR-6 through FR-11, sourced from:
+- `grimoires/loa/context/openclaw-starter-kit-analysis.md`
+- Operator production learnings (timeout, bloat, MECE)
+
+| ID | Requirement | Resolution |
+|----|-------------|------------|
+| FR-6 | Subagent timeout crashes | TimeoutEnforcer with 30min trusted model minimum, 3min hard floor |
+| FR-7 | Cron/script proliferation | BloatAuditor weekly with 20/50 caps, orphan detection |
+| FR-8 | Task redundancy | MECEValidator blocks overlapping crons, similar scripts |
+| FR-9 | Scheduler silent failures | MetaSchedulerMonitor with auto-restart |
+| FR-10 | Context overflow | ContextTracker with 60/70/80% warnings |
+| FR-11 | API call waste | Non-LLM health-check.sh for routine monitoring |
+
+### Flatline Review High-Consensus Additions (v0.3.0)
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| IMP-001 | MetaMonitor/systemd conflict | Added `ownershipMode` to prevent fight over scheduler control |
+| IMP-005 | No alerting mechanism | Added NotificationSink with Slack/Discord/webhook support |
+| SKP-005 | Health script could hang | Added self-timeout wrapper (30s default) |
 
 ---
 
