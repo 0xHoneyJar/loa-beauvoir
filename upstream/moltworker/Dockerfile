@@ -6,8 +6,8 @@
 #
 # Layers:
 #   L0: Cloudflare Sandbox base (SDK communication on port 3000)
-#   L1: System dependencies (Node.js, Python, Rust)
-#   L2: Loa optimizations (ck-search, beads_rust, memory stack, flatline)
+#   L1: System dependencies (Node.js, Python)
+#   L2: Loa optimizations (memory stack, flatline)
 #   L3: OpenClaw Gateway (clawdbot)
 #   L4: Loa Identity (fetched from GitHub)
 #
@@ -39,10 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
-    # Build tools for Rust compilation
-    build-essential \
-    pkg-config \
-    libssl-dev \
     && curl -fsSLk https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
     && rm /tmp/node.tar.xz \
@@ -60,26 +56,14 @@ RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux
 RUN npm install -g pnpm@10
 
 # -----------------------------------------------------------------------------
-# Stage 2: Loa Optimizations (Rust + Python tools)
+# Stage 2: Loa Optimizations (Python tools)
 # -----------------------------------------------------------------------------
 
-# Install Rust toolchain for ck-search and beads_rust
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
-    && rustc --version \
-    && cargo --version
-
-# NOTE: ck-search skipped - ONNX Runtime linking fails in this container environment
-# TODO: Revisit when ck-search releases pre-built binaries or fixes ONNX deps
-# Benefits when available: 80-90% faster searches, Ghost Feature detection
-# RUN cargo install ck-search && ck --version
-
-# Install beads_rust (persistent task graph)
-# Benefits: Cross-session task persistence, dependency tracking
-RUN cargo install beads_rust \
-    && br --version
+# NOTE: Rust tools (ck-search, beads_rust) skipped for now
+# - ck-search: ONNX Runtime linking fails in container build
+# - beads_rust: Not published to crates.io (rusty-beads exists but different)
+# TODO: Revisit when pre-built binaries or proper crate names available
+# The core Loa functionality works without these - they are optimizations.
 
 # Install Python packages for Memory Stack
 # WARNING: This adds ~2-3GB for PyTorch + transformers
@@ -152,7 +136,7 @@ ENV CLAUDE_CONFIG_DIR=/workspace/.claude
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build timestamp to force fresh builds when needed
-ARG BUILD_TS=20260203-0200
+ARG BUILD_TS=20260203-0300
 
 # NO ENTRYPOINT - The base image handles SDK communication on port 3000
 # The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
