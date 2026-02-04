@@ -33,12 +33,24 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Bootstrap handler result with cleanup function
+ * HIGH-001 Fix: Expose cleanup to prevent memory leak
+ */
+export interface BootstrapHandler {
+  /** The hook handler function */
+  handler: (event: PluginHookGatewayStartEvent, ctx: PluginHookGatewayContext) => Promise<void>;
+  /** Cleanup function to stop background recovery timer */
+  cleanup: () => void;
+}
+
+/**
  * Create bootstrap handler for gateway_start hook
+ * HIGH-001 Fix: Returns cleanup function to prevent memory leak
  */
 export function createBootstrapHandler(
   loa: LoaContext,
   logger: PluginLogger,
-): (event: PluginHookGatewayStartEvent, ctx: PluginHookGatewayContext) => Promise<void> {
+): BootstrapHandler {
   let bootstrapAttempts = 0;
   let graceWindowStart: Date | null = null;
   let backgroundRecoveryTimer: ReturnType<typeof setInterval> | null = null;
@@ -171,9 +183,21 @@ export function createBootstrapHandler(
   }
 
   /**
+   * Cleanup function to stop background recovery timer
+   * HIGH-001 Fix: Prevents memory leak on shutdown
+   */
+  function cleanup(): void {
+    if (backgroundRecoveryTimer) {
+      clearInterval(backgroundRecoveryTimer);
+      backgroundRecoveryTimer = null;
+      logger.info?.('[loa] Background recovery timer cleaned up');
+    }
+  }
+
+  /**
    * The actual hook handler
    */
-  return async function loaBootstrap(
+  async function loaBootstrap(
     _event: PluginHookGatewayStartEvent,
     _ctx: PluginHookGatewayContext,
   ): Promise<void> {
@@ -195,5 +219,10 @@ export function createBootstrapHandler(
     if (result.error) {
       loa.state.lastError = result.error;
     }
+  }
+
+  return {
+    handler: loaBootstrap,
+    cleanup,
   };
 }

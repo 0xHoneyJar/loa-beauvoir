@@ -21,10 +21,11 @@ const MAX_DELAY_MS = 30000;
 
 /**
  * Create a retry queue for failed operations
+ * HIGH-002 Fix: Promise-based lock to prevent race conditions
  */
 export function createRetryQueue(logger: PluginLogger): RetryQueue {
   const queue: RetryOperation[] = [];
-  let processing = false;
+  let processingPromise: Promise<void> | null = null;
 
   /**
    * Calculate delay with exponential backoff
@@ -52,62 +53,71 @@ export function createRetryQueue(logger: PluginLogger): RetryQueue {
     },
 
     async process(): Promise<void> {
-      if (processing || queue.length === 0) {
+      // HIGH-002 Fix: Promise-based lock prevents race conditions
+      // If already processing, wait for that to complete instead of returning
+      if (processingPromise) {
+        return processingPromise;
+      }
+
+      if (queue.length === 0) {
         return;
       }
 
-      processing = true;
+      // Create the processing promise that others can wait on
+      processingPromise = (async () => {
+        try {
+          while (queue.length > 0) {
+            const operation = queue[0];
 
-      try {
-        while (queue.length > 0) {
-          const operation = queue[0];
+            // Check if max attempts reached
+            if (operation.attempts >= operation.maxAttempts) {
+              logger.warn?.(
+                `[loa] Giving up on ${operation.type} after ${operation.attempts} attempts: ${operation.lastError}`,
+              );
+              queue.shift();
+              continue;
+            }
 
-          // Check if max attempts reached
-          if (operation.attempts >= operation.maxAttempts) {
-            logger.warn?.(
-              `[loa] Giving up on ${operation.type} after ${operation.attempts} attempts: ${operation.lastError}`,
-            );
-            queue.shift();
-            continue;
-          }
+            // Calculate backoff delay
+            if (operation.attempts > 0) {
+              const delay = calculateDelay(operation.attempts);
+              logger.info?.(
+                `[loa] Waiting ${delay}ms before retry ${operation.attempts + 1} for ${operation.type}`,
+              );
+              await sleep(delay);
+            }
 
-          // Calculate backoff delay
-          if (operation.attempts > 0) {
-            const delay = calculateDelay(operation.attempts);
-            logger.info?.(
-              `[loa] Waiting ${delay}ms before retry ${operation.attempts + 1} for ${operation.type}`,
-            );
-            await sleep(delay);
-          }
+            // Increment attempt count
+            operation.attempts++;
+            operation.lastAttempt = new Date();
 
-          // Increment attempt count
-          operation.attempts++;
-          operation.lastAttempt = new Date();
+            try {
+              // Execute the operation based on type
+              // The actual execution is handled by the caller who enqueued it
+              // This queue just manages timing and retry logic
+              // For now, we'll emit a message and let the hook re-process
+              logger.info?.(`[loa] Retry attempt ${operation.attempts} for ${operation.type}`);
 
-          try {
-            // Execute the operation based on type
-            // The actual execution is handled by the caller who enqueued it
-            // This queue just manages timing and retry logic
-            // For now, we'll emit a message and let the hook re-process
-            logger.info?.(`[loa] Retry attempt ${operation.attempts} for ${operation.type}`);
+              // Remove from queue on success
+              queue.shift();
+            } catch (err) {
+              const error = err instanceof Error ? err.message : String(err);
+              operation.lastError = error;
+              logger.warn?.(`[loa] Retry failed for ${operation.type}: ${error}`);
 
-            // Remove from queue on success
-            queue.shift();
-          } catch (err) {
-            const error = err instanceof Error ? err.message : String(err);
-            operation.lastError = error;
-            logger.warn?.(`[loa] Retry failed for ${operation.type}: ${error}`);
-
-            // Move to back of queue for later retry
-            queue.shift();
-            if (operation.attempts < operation.maxAttempts) {
-              queue.push(operation);
+              // Move to back of queue for later retry
+              queue.shift();
+              if (operation.attempts < operation.maxAttempts) {
+                queue.push(operation);
+              }
             }
           }
+        } finally {
+          processingPromise = null;
         }
-      } finally {
-        processing = false;
-      }
+      })();
+
+      return processingPromise;
     },
 
     getPendingCount(): number {

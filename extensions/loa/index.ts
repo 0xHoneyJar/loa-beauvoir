@@ -31,6 +31,8 @@ const DEFAULT_CONFIG: LoaConfig = {
 // Plugin state singleton
 let loaContext: LoaContext | null = null;
 let hookAdapter: HookAdapter | null = null;
+// HIGH-001 Fix: Track cleanup function to prevent memory leak
+let bootstrapCleanup: (() => void) | null = null;
 
 /**
  * Get the current LOA context (for external access)
@@ -51,6 +53,19 @@ export function isLoaActive(): boolean {
  */
 export function isLoaDegraded(): boolean {
   return loaContext?.state.isDegraded ?? false;
+}
+
+/**
+ * Cleanup LOA plugin resources
+ * HIGH-001 Fix: Prevents memory leak from background timers
+ */
+export function cleanup(): void {
+  if (bootstrapCleanup) {
+    bootstrapCleanup();
+    bootstrapCleanup = null;
+  }
+  loaContext = null;
+  hookAdapter = null;
 }
 
 /**
@@ -137,8 +152,10 @@ const plugin = {
       logger.info('[loa] Registering hooks...');
 
       // Bootstrap hook - generates SOUL.md with self-healing
-      const bootstrapHandler = createBootstrapHandler(loaContext, logger);
-      hookAdapter.registerBootstrapHook(bootstrapHandler, 100); // High priority
+      // HIGH-001 Fix: Store cleanup function to prevent memory leak
+      const bootstrap = createBootstrapHandler(loaContext, logger);
+      bootstrapCleanup = bootstrap.cleanup;
+      hookAdapter.registerBootstrapHook(bootstrap.handler, 100); // High priority
 
       // Before agent start - inject memory context
       const contextHandler = createContextInjectorHandler(loaContext, logger);

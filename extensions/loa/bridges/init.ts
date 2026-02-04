@@ -12,6 +12,43 @@ import type { PluginLogger } from '../../../src/plugins/types.js';
 import { createRetryQueue } from '../state/retry-queue.js';
 import { createLoopDetector } from '../state/loop-detector.js';
 
+/**
+ * Path traversal error
+ */
+export class PathTraversalError extends Error {
+  constructor(
+    message: string,
+    public readonly attemptedPath: string,
+  ) {
+    super(message);
+    this.name = 'PathTraversalError';
+  }
+}
+
+/**
+ * Validate that a resolved path is contained within the workspace directory.
+ * Prevents directory traversal attacks via malicious configuration.
+ *
+ * CRIT-001 Fix: Path traversal prevention
+ */
+function validateContainedPath(workspaceDir: string, relativePath: string, pathName: string): string {
+  const path = require('node:path');
+  const resolved = path.resolve(workspaceDir, relativePath);
+  const normalizedWorkspace = path.normalize(workspaceDir);
+  const normalizedResolved = path.normalize(resolved);
+
+  // Ensure the resolved path starts with the workspace directory
+  if (!normalizedResolved.startsWith(normalizedWorkspace + path.sep) &&
+      normalizedResolved !== normalizedWorkspace) {
+    throw new PathTraversalError(
+      `[loa] Path traversal detected in ${pathName}: path escapes workspace directory`,
+      relativePath,
+    );
+  }
+
+  return normalizedResolved;
+}
+
 // Re-export types we use
 export type {
   IdentityLoader,
@@ -114,9 +151,9 @@ export async function initializeLoa(
   const path = await import('node:path');
   const fs = await import('node:fs/promises');
 
-  // Resolve paths relative to workspace
-  const grimoiresPath = path.resolve(workspaceDir, config.grimoiresDir);
-  const walPath = path.resolve(workspaceDir, config.walDir);
+  // Resolve and validate paths - prevents directory traversal (CRIT-001)
+  const grimoiresPath = validateContainedPath(workspaceDir, config.grimoiresDir, 'grimoiresDir');
+  const walPath = validateContainedPath(workspaceDir, config.walDir, 'walDir');
 
   // Ensure directories exist
   await fs.mkdir(grimoiresPath, { recursive: true });
