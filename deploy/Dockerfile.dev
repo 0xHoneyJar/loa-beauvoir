@@ -1,40 +1,82 @@
 # =============================================================================
 # Loa Development Image
 # =============================================================================
-# Lightweight development image that inherits from production and adds:
-# - entr: File watcher for hot-reload
-# - tsx: Fast TypeScript execution
-# - curl: Health check support
+# Self-contained dev image that builds from base and adds hot-reload tools.
+# Does NOT depend on any pre-built images from GHCR.
 #
 # Build context: Repository root (.)
 # Build command: docker build -f deploy/Dockerfile.dev -t loa-dev:local .
 # =============================================================================
 
-ARG BASE_IMAGE=ghcr.io/0xhoneyjar/loa-beauvoir:main
-FROM ${BASE_IMAGE}
+FROM docker.io/cloudflare/sandbox:0.7.0
 
 # =============================================================================
-# Development Tools
+# Stage 1: System Dependencies (same as production)
 # =============================================================================
 
-# Install file watcher and utilities
+# Install Node.js 22
+ENV NODE_VERSION=22.13.1
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    xz-utils \
+    ca-certificates \
+    rsync \
+    bubblewrap \
+    socat \
+    ripgrep \
+    jq \
+    git \
+    tmux \
+    zsh \
+    curl \
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Dev tools for hot-reload
     entr \
     inotify-tools \
-    curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && curl -fsSLk https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && node --version \
+    && npm --version
 
-# Install tsx globally for fast TypeScript execution
-RUN npm install -g tsx
+# Install yq (YAML processor)
+RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq \
+    && chmod +x /usr/local/bin/yq
+
+# Install pnpm and tsx globally
+RUN npm install -g pnpm@10 tsx
 
 # =============================================================================
-# Development Startup Script
+# Stage 2: OpenClaw Gateway
 # =============================================================================
 
-# Copy dev startup script (path relative to repo root context)
+# Install clawdbot
+RUN npm install -g clawdbot@2026.1.24-3 \
+    && clawdbot --version
+
+# Create directory structure
+RUN mkdir -p \
+    /workspace \
+    /workspace/.claude \
+    /workspace/grimoires/loa \
+    /workspace/deploy/loa-identity \
+    /data/moltbot \
+    /data/wal \
+    /root/.openclaw
+
+# =============================================================================
+# Stage 3: Copy local files (for dev, these are mounted as volumes)
+# =============================================================================
+
+# Copy startup script
 COPY deploy/start-loa-dev.sh /usr/local/bin/start-loa-dev.sh
 RUN chmod +x /usr/local/bin/start-loa-dev.sh
+
+# Copy framework files (will be shadowed by volume mounts in dev)
+COPY .claude/ /workspace/.claude/
+COPY grimoires/ /workspace/grimoires/
 
 # =============================================================================
 # Runtime Configuration
@@ -50,9 +92,9 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # Expose ports: 18789 (gateway), 3000 (health/SDK)
 EXPOSE 18789 3000
 
-# Health check for container orchestration
+# Health check
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -sf http://localhost:18789/health || exit 1
 
-# Override entrypoint for dev mode
+# Use dev startup script with hot-reload
 ENTRYPOINT ["/usr/local/bin/start-loa-dev.sh"]

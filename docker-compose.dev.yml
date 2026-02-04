@@ -46,11 +46,13 @@ services:
       BEAUVOIR_DEV_MODE: "1"
       CLAUDE_CONFIG_DIR: /workspace/.claude
       NODE_OPTIONS: "--max-old-space-size=4096"
+      # Default dev token (override via .env.local for custom token)
+      CLAWDBOT_GATEWAY_TOKEN: ${CLAWDBOT_GATEWAY_TOKEN:-loa-dev-token-local}
 
     # Port mappings
     ports:
-      - "18789:18789"  # Gateway
-      - "3000:3000"    # Health/SDK
+      - "18789:18789" # Gateway
+      - "3000:3000" # Health/SDK
 
     # Resource limits (match production)
     deploy:

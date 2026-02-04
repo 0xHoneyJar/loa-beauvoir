@@ -16,6 +16,11 @@ echo "[loa-dev] Loa Development Mode"
 echo "[loa-dev] =============================================="
 echo "[loa-dev] BEAUVOIR_DEV_MODE=${BEAUVOIR_DEV_MODE:-not set}"
 echo "[loa-dev] CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-not set}"
+if [ -n "${CLAWDBOT_GATEWAY_TOKEN:-}" ]; then
+    echo "[loa-dev] CLAWDBOT_GATEWAY_TOKEN=<set>"
+else
+    echo "[loa-dev] CLAWDBOT_GATEWAY_TOKEN=<not set>"
+fi
 echo "[loa-dev] Started at: $(date -Iseconds)"
 
 # Skip recovery engine in dev mode
@@ -30,14 +35,6 @@ mkdir -p /workspace/deploy/loa-identity
 mkdir -p /workspace/.claude
 mkdir -p /workspace/grimoires/loa
 
-# Verify entr is installed
-if ! command -v entr &>/dev/null; then
-    echo "[loa-dev] WARNING: entr not installed, running without hot-reload"
-    echo "[loa-dev] Changes will require manual container restart"
-    echo "[loa-dev] Starting gateway..."
-    exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
-fi
-
 # Verify clawdbot is installed
 if ! command -v clawdbot &>/dev/null; then
     echo "[loa-dev] ERROR: clawdbot not found"
@@ -49,36 +46,46 @@ if ! command -v clawdbot &>/dev/null; then
 fi
 
 echo "[loa-dev] clawdbot version: $(clawdbot --version 2>/dev/null || echo 'unknown')"
+
+# Check if entr is available
+if ! command -v entr &>/dev/null; then
+    echo "[loa-dev] WARNING: entr not installed, running without hot-reload"
+    echo "[loa-dev] Changes will require manual container restart"
+    echo "[loa-dev] Starting gateway..."
+    exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
+fi
+
 echo "[loa-dev] entr version: $(entr 2>&1 | head -1 || echo 'unknown')"
+
+# Find TypeScript files to watch
+ts_files=$(find /workspace/deploy/loa-identity -name "*.ts" 2>/dev/null)
+
+if [ -z "$ts_files" ]; then
+    echo "[loa-dev] ----------------------------------------------"
+    echo "[loa-dev] No .ts files found in deploy/loa-identity/"
+    echo "[loa-dev] Hot-reload disabled (no files to watch)"
+    echo "[loa-dev] Starting gateway..."
+    echo "[loa-dev] ----------------------------------------------"
+    exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
+fi
+
 echo "[loa-dev] ----------------------------------------------"
-echo "[loa-dev] Watching for .ts changes in deploy/loa-identity/"
+echo "[loa-dev] Watching $(echo "$ts_files" | wc -l) .ts files in deploy/loa-identity/"
 echo "[loa-dev] Edit files to trigger automatic restart"
-echo "[loa-dev] Press Ctrl+C to stop"
+echo "[loa-dev] Starting gateway with hot-reload..."
 echo "[loa-dev] ----------------------------------------------"
 
 # Single process pattern: entr -r restarts the command on file changes
-# -d: track directories for new files (exit when new file added)
+# -n: non-interactive (required for Docker - no TTY)
 # -r: reload mode (restart command on change, send SIGTERM first)
 #
-# The outer loop handles the case where entr exits due to new files (-d flag)
-while true; do
-    # Find all .ts files in loa-identity directory
-    ts_files=$(find /workspace/deploy/loa-identity -name "*.ts" 2>/dev/null)
+# Note: We removed -d flag to avoid the constant rescan loop.
+# If you add new .ts files, restart the container to pick them up.
+echo "$ts_files" | entr -n -r sh -c '
+    echo "[loa-dev] $(date -Iseconds) Starting gateway..."
+    clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
+'
 
-    if [ -z "$ts_files" ]; then
-        echo "[loa-dev] No .ts files found in deploy/loa-identity/"
-        echo "[loa-dev] Starting gateway without file watching..."
-        exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
-    fi
-
-    # Watch files and restart gateway on changes
-    echo "$ts_files" | entr -d -r sh -c '
-        echo "[loa-dev] $(date -Iseconds) File change detected, restarting gateway..."
-        clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind lan
-    '
-
-    # entr exits when a new file is added (-d flag)
-    # Loop back to rescan for new files
-    echo "[loa-dev] $(date -Iseconds) Rescanning for new/deleted files..."
-    sleep 1
-done
+# If entr exits (shouldn't happen without -d), restart
+echo "[loa-dev] entr exited, restarting..."
+exec "$0"
