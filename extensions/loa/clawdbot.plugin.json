@@ -1,0 +1,20 @@
+{
+  "id": "loa",
+  "name": "LOA Identity",
+  "description": "LOA identity, memory, and recovery system for agent personality persistence",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "grimoiresDir": {
+        "type": "string",
+        "description": "Path to grimoires directory containing BEAUVOIR.md"
+      },
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable LOA identity system"
+      }
+    }
+  }
+}

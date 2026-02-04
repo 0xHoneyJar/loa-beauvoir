@@ -64,6 +64,36 @@ clawdbot onboard \
     --no-install-daemon \
     2>/dev/null || echo "[loa-dev] Onboard already configured"
 
+# Install LOA plugin dependencies globally (for deploy/loa-identity imports)
+echo "[loa-dev] Installing LOA dependencies globally..."
+npm install -g @noble/ed25519@2.3.0 @noble/hashes@1.8.0 2>/dev/null || {
+    echo "[loa-dev] WARNING: Failed to install @noble packages globally"
+}
+
+# Create node_modules symlinks for deploy/loa-identity
+mkdir -p /workspace/deploy/loa-identity/node_modules/@noble
+ln -sf /usr/local/lib/node_modules/@noble/ed25519 /workspace/deploy/loa-identity/node_modules/@noble/ed25519 2>/dev/null || true
+ln -sf /usr/local/lib/node_modules/@noble/hashes /workspace/deploy/loa-identity/node_modules/@noble/hashes 2>/dev/null || true
+
+# Install LOA plugin if available
+if [ -d "/workspace/extensions/loa" ]; then
+    echo "[loa-dev] Installing LOA plugin..."
+    # Link the plugin (so changes are reflected immediately)
+    clawdbot plugins install --link /workspace/extensions/loa 2>&1 || {
+        echo "[loa-dev] WARNING: Failed to install LOA plugin"
+        echo "[loa-dev] Agent will run without LOA identity"
+    }
+    # Verify plugin is loaded
+    if clawdbot plugins list 2>/dev/null | grep -q "loa.*loaded"; then
+        echo "[loa-dev] LOA plugin installed and ready"
+    else
+        echo "[loa-dev] LOA plugin installed (will load on gateway start)"
+    fi
+else
+    echo "[loa-dev] WARNING: LOA plugin not found at /workspace/extensions/loa"
+    echo "[loa-dev] Agent will run without LOA identity"
+fi
+
 # Auto-approve pending device pairing requests in dev mode
 # This runs in background to continuously approve new devices
 if [ "${BEAUVOIR_DEV_MODE:-0}" = "1" ]; then

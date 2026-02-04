@@ -38,6 +38,12 @@ services:
       - ./grimoires:/workspace/grimoires:rw
       # Identity layer code (read-write - hot-reload target)
       - ./deploy/loa-identity:/workspace/deploy/loa-identity:rw
+      # LOA OpenClaw plugin (read-write - for development)
+      - ./extensions/loa:/workspace/extensions/loa:rw
+      # LOA plugin node_modules (contains @noble/ed25519)
+      - ./extensions/loa/node_modules:/workspace/extensions/loa/node_modules:ro
+      # Root node_modules for deploy/loa-identity imports
+      - ./node_modules:/workspace/node_modules:ro
       # Persistent state (WAL, beads, ck index)
       - loa-data:/data
 
