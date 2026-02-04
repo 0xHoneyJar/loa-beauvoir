@@ -375,5 +375,14 @@ describe("BeadsRunStateManager", () => {
       await expect(manager.startSprint("SPRINT_123")).resolves.not.toThrow();
       await expect(manager.startSprint("abc-def-123")).resolves.not.toThrow();
     });
+
+    it("should reject path traversal in migrateFromDotRun", async () => {
+      await expect(manager.migrateFromDotRun("../../../etc")).rejects.toThrow(
+        "traversal not allowed",
+      );
+      await expect(manager.migrateFromDotRun(".run/../secrets")).rejects.toThrow(
+        "traversal not allowed",
+      );
+    });
   });
 });

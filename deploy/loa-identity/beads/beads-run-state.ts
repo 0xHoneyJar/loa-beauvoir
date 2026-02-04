@@ -521,6 +521,11 @@ export class BeadsRunStateManager {
    * Migrate existing .run/ state to beads
    */
   async migrateFromDotRun(dotRunPath: string): Promise<MigrationResult> {
+    // Security: Block path traversal attacks
+    if (dotRunPath.includes("..")) {
+      throw new Error("Invalid path: traversal not allowed");
+    }
+
     const warnings: string[] = [];
     let migratedSprints = 0;
     let migratedTasks = 0;
