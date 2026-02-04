@@ -64,7 +64,7 @@ describe("BeadsRecoveryHandler", () => {
         operation: "create",
         beadId: "bead-1",
         payload: { title: "Test" },
-        checksum: "1234567890123456",
+        checksum: "12345678901234567890123456789012",
       };
 
       mockAdapter = createMockWALAdapter([recentEntry]);
@@ -81,7 +81,7 @@ describe("BeadsRecoveryHandler", () => {
         operation: "create",
         beadId: "bead-1",
         payload: { title: "Test" },
-        checksum: "1234567890123456",
+        checksum: "12345678901234567890123456789012",
       };
 
       mockAdapter = createMockWALAdapter([oldEntry]);
@@ -116,7 +116,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "create",
           beadId: "bead-1",
           payload: { title: "New Task", type: "task", priority: 2 },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
       ];
 
@@ -148,7 +148,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "close",
           beadId: "bead-1",
           payload: { reason: "completed" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
       ];
 
@@ -158,8 +158,9 @@ describe("BeadsRecoveryHandler", () => {
       const result = await handler.recover();
 
       expect(result.success).toBe(true);
+      // SECURITY: beadId is properly escaped with single quotes
       expect(execMock).toHaveBeenCalledWith(
-        expect.stringContaining("br close bead-1"),
+        expect.stringContaining("br close 'bead-1'"),
         expect.anything(),
         expect.anything(),
       );
@@ -176,7 +177,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "label",
           beadId: "bead-1",
           payload: { action: "add", labels: ["bug", "high-priority"] },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
       ];
 
@@ -186,8 +187,9 @@ describe("BeadsRecoveryHandler", () => {
       const result = await handler.recover();
 
       expect(result.success).toBe(true);
+      // SECURITY: beadId and labels are properly escaped with single quotes
       expect(execMock).toHaveBeenCalledWith(
-        expect.stringContaining("br label add bead-1"),
+        expect.stringContaining("br label add 'bead-1' 'bug' 'high-priority'"),
         expect.anything(),
         expect.anything(),
       );
@@ -201,7 +203,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "create",
           beadId: "bead-1",
           payload: { title: "Task 1" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
         {
           id: "entry-2",
@@ -209,7 +211,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "create",
           beadId: "bead-2",
           payload: { title: "Task 2" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
         {
           id: "entry-3",
@@ -217,7 +219,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "update",
           beadId: "bead-1",
           payload: { title: "Updated Task 1" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
       ];
 
@@ -260,7 +262,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "create",
           beadId: "bead-1",
           payload: { title: "Task 1" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
         {
           id: "entry-2",
@@ -268,7 +270,7 @@ describe("BeadsRecoveryHandler", () => {
           operation: "create",
           beadId: "bead-2",
           payload: { title: "Task 2" },
-          checksum: "1234567890123456",
+          checksum: "12345678901234567890123456789012",
         },
       ];
 

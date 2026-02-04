@@ -196,8 +196,9 @@ export class BeadsPersistenceService {
         payload,
       });
     } catch (e) {
-      // Log but don't block - SQLite write will still happen
-      console.error(`[beads-persistence] Failed to record transition: ${e}`);
+      // IMPORTANT: Log at error level but don't throw - SQLite write will still happen
+      // WAL is for crash recovery only; failure to record is serious but non-blocking
+      console.error(`[beads-persistence] Failed to record WAL transition: ${e}`);
       return -1;
     }
   }

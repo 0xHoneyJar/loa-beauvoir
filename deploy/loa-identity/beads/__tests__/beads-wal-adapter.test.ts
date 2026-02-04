@@ -82,7 +82,7 @@ describe("BeadsWALAdapter", () => {
         type: "task",
         priority: 2,
       });
-      expect(entry.checksum).toHaveLength(16);
+      expect(entry.checksum).toHaveLength(32); // 128-bit (32 hex chars) for collision resistance
       expect(entry.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
       expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
@@ -267,8 +267,9 @@ describe("BeadsWALAdapter", () => {
         payload: {},
       });
 
+      // SECURITY: Logs are sanitized - don't expose beadId values
       expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[beads-wal] recorded create for bead-1"),
+        expect.stringContaining("[beads-wal] recorded create (seq=1)"),
       );
 
       logSpy.mockRestore();

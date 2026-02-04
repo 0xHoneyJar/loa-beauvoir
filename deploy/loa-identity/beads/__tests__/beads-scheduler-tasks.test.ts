@@ -219,25 +219,41 @@ describe("BeadsSchedulerTasks", () => {
       );
     });
 
-    it("health check should throw on unhealthy status", async () => {
+    it("health check should warn and throw on unhealthy status", async () => {
       const { exec } = await import("child_process");
       const execMock = vi.mocked(exec);
 
+      // Mock returns unhealthy status in JSON mode
       execMock.mockImplementation((cmd, opts, callback) => {
         if (typeof opts === "function") {
           callback = opts;
         }
-        callback(null, {
-          stdout: JSON.stringify({ status: "unhealthy", message: "Database corrupt" }),
-          stderr: "",
-        });
+        // Return unhealthy status for both JSON and text mode attempts
+        if (String(cmd).includes("--json")) {
+          callback(null, {
+            stdout: JSON.stringify({ status: "unhealthy", message: "Database corrupt" }),
+            stderr: "",
+          });
+        } else {
+          // Text mode fallback - include ERROR to trigger failure
+          callback(null, {
+            stdout: "ERROR: Database corrupt",
+            stderr: "",
+          });
+        }
         return {} as any;
       });
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       registerBeadsSchedulerTasks(mockScheduler);
       const task = mockScheduler.registeredTasks.get("beads_health");
 
+      // Health check throws on unhealthy status
       await expect(task.handler()).rejects.toThrow("Beads unhealthy");
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Health check warning"));
+
+      warnSpy.mockRestore();
     });
 
     it("stale check should warn on stale issues", async () => {
