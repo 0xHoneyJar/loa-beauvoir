@@ -4,6 +4,9 @@
 
 Autonomous execution of sprint implementation with cycle loop until review and audit pass.
 
+**Primary data source**: BeadsRunStateManager (Phase 4+)
+**Fallback**: .run/ state files (legacy, deprecated)
+
 ## Usage
 
 ```
@@ -16,25 +19,26 @@ Autonomous execution of sprint implementation with cycle loop until review and a
 
 ## Arguments
 
-| Argument | Description | Required |
-|----------|-------------|----------|
-| `target` | Sprint to implement (e.g., `sprint-1`) | Yes |
+| Argument | Description                            | Required |
+| -------- | -------------------------------------- | -------- |
+| `target` | Sprint to implement (e.g., `sprint-1`) | Yes      |
 
 ## Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--max-cycles N` | Maximum iteration cycles | 20 |
-| `--timeout H` | Maximum runtime in hours | 8 |
-| `--branch NAME` | Feature branch name | `feature/<target>` |
-| `--dry-run` | Validate but don't execute | false |
-| `--reset-ice` | Reset circuit breaker before starting | false |
+| Option           | Description                           | Default            |
+| ---------------- | ------------------------------------- | ------------------ |
+| `--max-cycles N` | Maximum iteration cycles              | 20                 |
+| `--timeout H`    | Maximum runtime in hours              | 8                  |
+| `--branch NAME`  | Feature branch name                   | `feature/<target>` |
+| `--dry-run`      | Validate but don't execute            | false              |
+| `--reset-ice`    | Reset circuit breaker before starting | false              |
 
 ## Pre-flight Checks (Jack-In)
 
 Before execution begins, validate:
 
 1. **Configuration Check**
+
    ```bash
    # Check if run_mode.enabled is true in .loa.config.yaml
    if ! yq '.run_mode.enabled // false' .loa.config.yaml | grep -q true; then
@@ -44,18 +48,42 @@ Before execution begins, validate:
    ```
 
 2. **Branch Safety Check**
+
    ```bash
    # Verify not on protected branch using ICE
    .claude/scripts/run-mode-ice.sh validate
    ```
 
 3. **Permission Check**
+
    ```bash
    # Verify all required permissions configured
    .claude/scripts/check-permissions.sh --quiet
    ```
 
-4. **State Check**
+4. **State Check (Primary: BeadsRunStateManager)**
+
+   ```typescript
+   import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
+
+   async function checkRunState() {
+     const manager = createBeadsRunStateManager();
+     const state = await manager.getRunState();
+
+     if (state === "RUNNING") {
+       console.log("ERROR: Run already in progress. Use /run-halt or /run-resume");
+       process.exit(1);
+     }
+
+     if (state === "HALTED") {
+       console.log("ERROR: Run is halted. Use /run-resume to continue");
+       process.exit(1);
+     }
+   }
+   ```
+
+   **Fallback: Legacy .run/ Files (Deprecated)**
+
    ```bash
    # Check for conflicting .run/ state
    if [[ -f .run/state.json ]]; then
@@ -108,7 +136,38 @@ update_state(state: JACKED_OUT)
 
 ## State Management
 
-### State File Structure
+### Primary: Beads-Backed State (Phase 4+)
+
+The BeadsRunStateManager uses beads labels to track run state:
+
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
+
+async function initializeRun(sprintIds: string[]) {
+  const manager = createBeadsRunStateManager();
+
+  // Start run - creates run epic and labels sprints
+  const runId = await manager.startRun(sprintIds);
+
+  // Start first sprint
+  await manager.startSprint(sprintIds[0]);
+
+  return runId;
+}
+
+async function onCircuitBreakerTrigger(reason: string) {
+  const manager = createBeadsRunStateManager();
+  const cb = await manager.haltRun(reason);
+  console.log(`Circuit breaker created: ${cb.beadId}`);
+}
+
+async function onSprintComplete(sprintId: string) {
+  const manager = createBeadsRunStateManager();
+  await manager.completeSprint(sprintId);
+}
+```
+
+### Fallback: Legacy State File Structure (Deprecated)
 
 File: `.run/state.json`
 
@@ -127,8 +186,8 @@ File: `.run/state.json`
     "current": 3,
     "limit": 20,
     "history": [
-      {"cycle": 1, "phase": "IMPLEMENT", "findings": 5, "files_changed": 10},
-      {"cycle": 2, "phase": "REVIEW", "findings": 2, "files_changed": 3}
+      { "cycle": 1, "phase": "IMPLEMENT", "findings": 5, "files_changed": 10 },
+      { "cycle": 2, "phase": "REVIEW", "findings": 2, "files_changed": 3 }
     ]
   },
   "metrics": {
@@ -319,7 +378,7 @@ track_deleted_files() {
 
 ### Tree View Generator
 
-```bash
+````bash
 generate_deleted_tree() {
   local log_file=".run/deleted-files.log"
 
@@ -349,7 +408,7 @@ generate_deleted_tree() {
   echo ""
   echo "> ⚠️ These deletions are intentional but please verify they are correct."
 }
-```
+````
 
 ## PR Creation
 
@@ -475,11 +534,13 @@ EOF
 ## Output
 
 On successful completion:
+
 - Draft PR created on feature branch
 - `.run/state.json` shows state: `JACKED_OUT`
 - PR URL displayed to user
 
 On circuit breaker trip:
+
 - Run halted
 - `.run/state.json` shows state: `HALTED`
 - `.run/circuit-breaker.json` shows state: `OPEN` with trigger reason
@@ -691,7 +752,7 @@ while circuit_breaker.state == CLOSED:
 ```yaml
 # .loa.config.yaml
 run_mode:
-  enabled: true  # Required to use /run
+  enabled: true # Required to use /run
   defaults:
     max_cycles: 20
     timeout_hours: 8
