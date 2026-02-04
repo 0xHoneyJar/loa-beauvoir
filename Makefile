@@ -86,12 +86,15 @@ dev-clean:
 # =============================================================================
 
 # Open webchat UI in browser (requires dev container running)
+# Uses default dev token; override with CLAWDBOT_GATEWAY_TOKEN env var
 dev-chat:
-	@echo "Opening webchat UI at http://localhost:18789"
-	@echo "Make sure 'make dev' is running in another terminal"
-	@command -v xdg-open >/dev/null && xdg-open http://localhost:18789 || \
-	 command -v open >/dev/null && open http://localhost:18789 || \
-	 echo "Open http://localhost:18789 in your browser"
+	@TOKEN=$${CLAWDBOT_GATEWAY_TOKEN:-loa-dev-token-local}; \
+	URL="http://localhost:18789/?token=$$TOKEN"; \
+	echo "Opening webchat UI at $$URL"; \
+	echo "Make sure 'make dev' is running in another terminal"; \
+	command -v xdg-open >/dev/null && xdg-open "$$URL" || \
+	 command -v open >/dev/null && open "$$URL" || \
+	 echo "Open $$URL in your browser"
 
 # Interactive TUI chat inside container
 dev-tui:
