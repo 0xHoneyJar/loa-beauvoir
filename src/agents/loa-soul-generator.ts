@@ -22,9 +22,15 @@ import * as path from "node:path";
  *
  * @param workspaceDir - The workspace directory (e.g., ~/.openclaw/workspace)
  * @returns Generated SOUL.md content, or null if BEAUVOIR.md not found/invalid
+ *
+ * Path Resolution (Loa v1.27.0 pattern):
+ * 1. LOA_SOUL_SOURCE env var (absolute path) - highest priority
+ * 2. Default: {workspaceDir}/grimoires/loa/BEAUVOIR.md
  */
 export async function tryGenerateSoulFromBeauvoir(workspaceDir: string): Promise<string | null> {
-  const beauvoirPath = path.join(workspaceDir, "grimoires/loa/BEAUVOIR.md");
+  // Support configurable path via environment variable (Loa v1.27.0 pattern)
+  const beauvoirPath =
+    process.env.LOA_SOUL_SOURCE ?? path.join(workspaceDir, "grimoires/loa/BEAUVOIR.md");
 
   try {
     const content = await fs.readFile(beauvoirPath, "utf-8");

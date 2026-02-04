@@ -25,10 +25,15 @@ WORKSPACE="/root/clawd"
 LOA_WORKSPACE="/workspace"
 GRIMOIRE_DIR="$LOA_WORKSPACE/grimoires/loa"
 
+# LOA Soul Source - configurable BEAUVOIR.md path (Loa v1.27.0 pattern)
+# Export for loa-soul-generator.ts to read via process.env
+export LOA_SOUL_SOURCE="${LOA_SOUL_SOURCE:-$GRIMOIRE_DIR/BEAUVOIR.md}"
+
 echo "[loa] Starting Loa Cloud Stack"
 echo "[loa] Config directory: $CONFIG_DIR"
 echo "[loa] Workspace: $WORKSPACE"
 echo "[loa] Loa workspace: $LOA_WORKSPACE"
+echo "[loa] LOA_SOUL_SOURCE=$LOA_SOUL_SOURCE"
 echo "[loa] BEAUVOIR_DEV_MODE=${BEAUVOIR_DEV_MODE:-0}"
 
 # Create directories
