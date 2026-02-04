@@ -298,6 +298,45 @@ init_loa_tools() {
 init_loa_tools &
 
 # =============================================================================
+# DEFERRED TOOL LOADING (Netinstall Pattern)
+# Start background tool installation if enabled
+# Tools: Rust, ck-search, beads_rust, sentence-transformers
+# =============================================================================
+
+start_deferred_tools() {
+    if [ "${LOA_DEFERRED_TOOLS:-true}" != "true" ]; then
+        echo "[loa] Deferred tools disabled (LOA_DEFERRED_TOOLS=false)"
+        return
+    fi
+
+    echo "[loa] Starting deferred tool loader in background..."
+    echo "[loa] Tool directory: ${LOA_TOOL_DIR:-/data/tools}"
+
+    # Check tool status before loading
+    echo "[loa] Current tool status:"
+    command -v /root/.cargo/bin/ck &>/dev/null && echo "[loa]   ck-search: installed" || echo "[loa]   ck-search: pending"
+    command -v /root/.cargo/bin/br &>/dev/null && echo "[loa]   beads_rust: installed" || echo "[loa]   beads_rust: pending"
+    python3 -c "from sentence_transformers import SentenceTransformer" 2>/dev/null && echo "[loa]   sentence-transformers: installed" || echo "[loa]   sentence-transformers: pending"
+
+    # Run tool loader in background if tsx is available
+    if command -v tsx &>/dev/null; then
+        tsx "$LOA_WORKSPACE/deploy/loa-identity/tool-loader/tool-loader.ts" &
+        echo "[loa] Tool loader started (PID: $!)"
+    elif command -v node &>/dev/null; then
+        # Fallback to node with experimental flags
+        node --experimental-specifier-resolution=node \
+            --loader ts-node/esm \
+            "$LOA_WORKSPACE/deploy/loa-identity/tool-loader/tool-loader.ts" 2>/dev/null &
+        echo "[loa] Tool loader started via node (PID: $!)"
+    else
+        echo "[loa] WARNING: No TypeScript runtime available, skipping tool loader"
+    fi
+}
+
+# Start deferred tool loading (non-blocking)
+start_deferred_tools &
+
+# =============================================================================
 # RUNTIME CLAWDBOT INSTALLATION
 # Installed at runtime to avoid large Docker layer that times out on push
 # =============================================================================
