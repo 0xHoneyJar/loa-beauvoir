@@ -4,15 +4,53 @@
  * Restores beads state from WAL after a crash by replaying
  * recorded transitions through the br CLI.
  *
+ * SECURITY: All user-controllable values are validated and escaped
+ * before being used in shell commands to prevent command injection.
+ *
  * @module beads-recovery
  */
 
 import { exec } from "child_process";
 import { statSync, existsSync } from "fs";
 import { promisify } from "util";
-import type { BeadsWALAdapter, BeadWALEntry, BeadOperation } from "./beads-wal-adapter.js";
+import type { BeadsWALAdapter, BeadWALEntry } from "./beads-wal-adapter.js";
 
 const execAsync = promisify(exec);
+
+/**
+ * SECURITY: Pattern for valid bead IDs (alphanumeric, underscore, hyphen only)
+ * Prevents command injection and path traversal via beadId
+ */
+const BEAD_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * SECURITY: Allowed bead types (whitelist)
+ */
+const ALLOWED_TYPES = new Set(["task", "bug", "feature", "epic", "story", "debt", "spike"]);
+
+/**
+ * SECURITY: Allowed label actions (whitelist)
+ */
+const ALLOWED_LABEL_ACTIONS = new Set(["add", "remove"]);
+
+/**
+ * SECURITY: Allowed dependency actions (whitelist)
+ */
+const ALLOWED_DEP_ACTIONS = new Set(["add", "remove"]);
+
+/**
+ * SECURITY: Allowed update payload keys (whitelist)
+ */
+const ALLOWED_UPDATE_KEYS = new Set([
+  "title",
+  "description",
+  "priority",
+  "type",
+  "status",
+  "assignee",
+  "due",
+  "estimate",
+]);
 
 /**
  * Result of a recovery operation
@@ -45,6 +83,34 @@ export interface BeadsRecoveryConfig {
 }
 
 /**
+ * SECURITY: Validate bead ID against safe pattern
+ * @throws Error if beadId contains unsafe characters
+ */
+function validateBeadId(beadId: string): void {
+  if (!beadId || typeof beadId !== "string") {
+    throw new Error("Invalid beadId: must be a non-empty string");
+  }
+  if (!BEAD_ID_PATTERN.test(beadId)) {
+    throw new Error(
+      `Invalid beadId: must match pattern ${BEAD_ID_PATTERN} (got: ${beadId.slice(0, 50)})`,
+    );
+  }
+  if (beadId.length > 128) {
+    throw new Error("Invalid beadId: exceeds maximum length of 128 characters");
+  }
+}
+
+/**
+ * SECURITY: Validate brCommand is safe
+ * Only allows 'br' or absolute paths to prevent arbitrary command execution
+ */
+function validateBrCommand(cmd: string): void {
+  if (cmd === "br") return;
+  if (cmd.startsWith("/") && !cmd.includes(" ") && !cmd.includes(";")) return;
+  throw new Error(`Invalid brCommand: must be 'br' or an absolute path without spaces/semicolons`);
+}
+
+/**
  * Recovery handler for beads state
  *
  * Checks if recovery is needed by comparing WAL timestamps with SQLite mtime,
@@ -60,7 +126,12 @@ export class BeadsRecoveryHandler {
   constructor(adapter: BeadsWALAdapter, config?: BeadsRecoveryConfig) {
     this.adapter = adapter;
     this.beadsDir = config?.beadsDir ?? ".beads";
-    this.brCommand = config?.brCommand ?? "br";
+
+    // SECURITY: Validate brCommand before storing
+    const brCmd = config?.brCommand ?? "br";
+    validateBrCommand(brCmd);
+    this.brCommand = brCmd;
+
     this.verbose = config?.verbose ?? false;
     this.skipSync = config?.skipSync ?? false;
   }
@@ -96,7 +167,8 @@ export class BeadsRecoveryHandler {
 
       return needsRecovery;
     } catch (e) {
-      console.error(`[beads-recovery] Error checking recovery status: ${e}`);
+      // SECURITY: Don't expose internal error details
+      console.error("[beads-recovery] Error checking recovery status");
       // If we can't determine, assume recovery is needed for safety
       return true;
     }
@@ -133,10 +205,13 @@ export class BeadsRecoveryHandler {
 
       for (const [beadId, beadEntries] of Array.from(byBead.entries())) {
         try {
+          // SECURITY: Validate beadId before processing
+          validateBeadId(beadId);
           await this.replayBeadEntries(beadId, beadEntries);
           affectedBeads.add(beadId);
         } catch (e) {
-          console.error(`[beads-recovery] Failed to replay bead ${beadId}: ${e}`);
+          // SECURITY: Don't expose full error details in logs
+          console.error(`[beads-recovery] Failed to replay bead: validation or command error`);
           // Continue with other beads
         }
       }
@@ -147,7 +222,7 @@ export class BeadsRecoveryHandler {
           await this.execBr("sync --flush-only");
           console.log("[beads-recovery] Synced to JSONL");
         } catch (e) {
-          console.warn(`[beads-recovery] Sync failed (non-fatal): ${e}`);
+          console.warn("[beads-recovery] Sync failed (non-fatal)");
         }
       }
 
@@ -165,15 +240,15 @@ export class BeadsRecoveryHandler {
 
       return result;
     } catch (e) {
-      const error = String(e);
-      console.error(`[beads-recovery] Recovery failed: ${error}`);
+      // SECURITY: Don't expose internal error details
+      console.error("[beads-recovery] Recovery failed");
 
       return {
         success: false,
         entriesReplayed: 0,
         beadsAffected: Array.from(affectedBeads),
         durationMs: Date.now() - start,
-        error,
+        error: "Recovery failed - check logs for details",
       };
     }
   }
@@ -184,7 +259,7 @@ export class BeadsRecoveryHandler {
   private async replayBeadEntries(beadId: string, entries: BeadWALEntry[]): Promise<void> {
     for (const entry of entries) {
       if (this.verbose) {
-        console.log(`[beads-recovery] Replaying ${entry.operation} for ${beadId}`);
+        console.log(`[beads-recovery] Replaying ${entry.operation} for bead`);
       }
 
       await this.replayEntry(entry);
@@ -196,6 +271,9 @@ export class BeadsRecoveryHandler {
    */
   private async replayEntry(entry: BeadWALEntry): Promise<void> {
     const { operation, beadId, payload } = entry;
+
+    // SECURITY: Validate beadId for every entry
+    validateBeadId(beadId);
 
     switch (operation) {
       case "create":
@@ -227,14 +305,21 @@ export class BeadsRecoveryHandler {
         break;
 
       default:
-        console.warn(`[beads-recovery] Unknown operation: ${operation as string}`);
+        console.warn("[beads-recovery] Unknown operation type, skipping");
     }
   }
 
   private async replayCreate(payload: Record<string, unknown>): Promise<void> {
     const title = this.escapeArg(String(payload.title ?? "Untitled"));
-    const type = payload.type ?? "task";
-    const priority = payload.priority ?? 2;
+
+    // SECURITY: Whitelist allowed types
+    const rawType = String(payload.type ?? "task");
+    const type = ALLOWED_TYPES.has(rawType) ? rawType : "task";
+
+    // SECURITY: Validate priority is a number in valid range
+    const rawPriority = Number(payload.priority);
+    const priority =
+      Number.isInteger(rawPriority) && rawPriority >= 0 && rawPriority <= 10 ? rawPriority : 2;
 
     let cmd = `create ${title} --type ${type} --priority ${priority}`;
 
@@ -248,50 +333,82 @@ export class BeadsRecoveryHandler {
   private async replayUpdate(beadId: string, payload: Record<string, unknown>): Promise<void> {
     const updates: string[] = [];
 
+    // SECURITY: Only allow whitelisted keys
     for (const [key, value] of Object.entries(payload)) {
-      if (value !== undefined && value !== null) {
+      if (value !== undefined && value !== null && ALLOWED_UPDATE_KEYS.has(key)) {
+        // SECURITY: Escape both key (via whitelist) and value
         updates.push(`--${key} ${this.escapeArg(String(value))}`);
       }
     }
 
     if (updates.length > 0) {
-      await this.execBr(`update ${beadId} ${updates.join(" ")}`);
+      // SECURITY: beadId already validated, escape it anyway for defense in depth
+      await this.execBr(`update ${this.escapeArg(beadId)} ${updates.join(" ")}`);
     }
   }
 
   private async replayClose(beadId: string, payload: Record<string, unknown>): Promise<void> {
     const reason = payload.reason ? ` --reason ${this.escapeArg(String(payload.reason))}` : "";
-    await this.execBr(`close ${beadId}${reason}`);
+    // SECURITY: Escape beadId
+    await this.execBr(`close ${this.escapeArg(beadId)}${reason}`);
   }
 
   private async replayReopen(beadId: string): Promise<void> {
-    await this.execBr(`reopen ${beadId}`);
+    // SECURITY: Escape beadId
+    await this.execBr(`reopen ${this.escapeArg(beadId)}`);
   }
 
   private async replayLabel(beadId: string, payload: Record<string, unknown>): Promise<void> {
-    const action = payload.action ?? "add";
-    const labels = Array.isArray(payload.labels)
-      ? payload.labels.join(" ")
-      : String(payload.labels ?? payload.label ?? "");
+    // SECURITY: Whitelist allowed actions
+    const rawAction = String(payload.action ?? "add");
+    const action = ALLOWED_LABEL_ACTIONS.has(rawAction) ? rawAction : "add";
 
-    if (labels) {
-      await this.execBr(`label ${action} ${beadId} ${labels}`);
+    // SECURITY: Escape each label individually
+    let escapedLabels: string;
+    if (Array.isArray(payload.labels)) {
+      // Validate and escape each label
+      const safeLabels = payload.labels
+        .map((l) => String(l))
+        .filter((l) => /^[a-zA-Z0-9_:-]+$/.test(l))
+        .map((l) => this.escapeArg(l));
+      escapedLabels = safeLabels.join(" ");
+    } else {
+      const labelStr = String(payload.labels ?? payload.label ?? "");
+      if (/^[a-zA-Z0-9_:-]+$/.test(labelStr)) {
+        escapedLabels = this.escapeArg(labelStr);
+      } else {
+        escapedLabels = "";
+      }
+    }
+
+    if (escapedLabels) {
+      // SECURITY: Escape beadId
+      await this.execBr(`label ${action} ${this.escapeArg(beadId)} ${escapedLabels}`);
     }
   }
 
   private async replayComment(beadId: string, payload: Record<string, unknown>): Promise<void> {
     const text = this.escapeArg(String(payload.text ?? ""));
-    if (text) {
-      await this.execBr(`comments add ${beadId} ${text}`);
+    if (text && text !== "''") {
+      // SECURITY: Escape beadId
+      await this.execBr(`comments add ${this.escapeArg(beadId)} ${text}`);
     }
   }
 
   private async replayDep(beadId: string, payload: Record<string, unknown>): Promise<void> {
-    const action = payload.action ?? "add";
+    // SECURITY: Whitelist allowed actions
+    const rawAction = String(payload.action ?? "add");
+    const action = ALLOWED_DEP_ACTIONS.has(rawAction) ? rawAction : "add";
+
     const target = payload.target ?? payload.dependency;
 
     if (target) {
-      await this.execBr(`dep ${action} ${beadId} ${target}`);
+      const targetStr = String(target);
+      // SECURITY: Validate target is a valid beadId
+      if (BEAD_ID_PATTERN.test(targetStr)) {
+        // SECURITY: Escape both beadId and target
+        await this.execBr(`dep ${action} ${this.escapeArg(beadId)} ${this.escapeArg(targetStr)}`);
+      }
     }
   }
 
@@ -302,7 +419,8 @@ export class BeadsRecoveryHandler {
     const cmd = `${this.brCommand} ${args}`;
 
     if (this.verbose) {
-      console.log(`[beads-recovery] Executing: ${cmd}`);
+      // SECURITY: Don't log full command which may contain sensitive data
+      console.log("[beads-recovery] Executing br command");
     }
 
     try {
@@ -312,18 +430,20 @@ export class BeadsRecoveryHandler {
       });
 
       if (stderr && this.verbose) {
-        console.warn(`[beads-recovery] stderr: ${stderr}`);
+        // SECURITY: Don't expose stderr content
+        console.warn("[beads-recovery] Command produced stderr output");
       }
 
       return stdout;
     } catch (e: unknown) {
-      const error = e as { message?: string; stderr?: string };
-      throw new Error(`br command failed: ${error.message ?? error.stderr ?? String(e)}`);
+      // SECURITY: Don't expose command details in error
+      throw new Error("br command execution failed");
     }
   }
 
   /**
    * Escape argument for shell execution
+   * Uses single-quote escaping which is safe for all content
    */
   private escapeArg(arg: string): string {
     // Escape single quotes and wrap in single quotes

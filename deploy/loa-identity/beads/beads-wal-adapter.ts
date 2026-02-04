@@ -4,11 +4,105 @@
  * Records beads state transitions to the Write-Ahead Log for crash recovery.
  * Integrates with OpenClaw's SegmentedWALManager for persistence.
  *
+ * SECURITY: All beadIds are validated before use in paths to prevent
+ * path traversal attacks. Checksums use 128-bit (32 hex char) truncation
+ * for adequate collision resistance.
+ *
  * @module beads-wal-adapter
  */
 
 import { createHash, randomUUID } from "crypto";
 import type { SegmentedWALManager, WALEntry } from "../wal/wal-manager.js";
+
+/**
+ * SECURITY: Pattern for valid bead IDs (alphanumeric, underscore, hyphen only)
+ * Prevents path traversal and injection via beadId
+ */
+const BEAD_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * SECURITY: Maximum beadId length to prevent DoS via extremely long IDs
+ */
+const MAX_BEAD_ID_LENGTH = 128;
+
+/**
+ * SECURITY: Allowed operation types (whitelist)
+ */
+const ALLOWED_OPERATIONS = new Set<BeadOperation>([
+  "create",
+  "update",
+  "close",
+  "reopen",
+  "label",
+  "comment",
+  "dep",
+]);
+
+/**
+ * SECURITY: Validate bead ID against safe pattern
+ * @throws Error if beadId contains unsafe characters or is invalid
+ */
+function validateBeadId(beadId: unknown): asserts beadId is string {
+  if (!beadId || typeof beadId !== "string") {
+    throw new Error("Invalid beadId: must be a non-empty string");
+  }
+  if (!BEAD_ID_PATTERN.test(beadId)) {
+    throw new Error(
+      `Invalid beadId: must match pattern ${BEAD_ID_PATTERN} (alphanumeric, underscore, hyphen only)`,
+    );
+  }
+  if (beadId.length > MAX_BEAD_ID_LENGTH) {
+    throw new Error(`Invalid beadId: exceeds maximum length of ${MAX_BEAD_ID_LENGTH} characters`);
+  }
+}
+
+/**
+ * SECURITY: Validate operation type against whitelist
+ */
+function validateOperation(operation: unknown): asserts operation is BeadOperation {
+  if (!operation || typeof operation !== "string") {
+    throw new Error("Invalid operation: must be a non-empty string");
+  }
+  if (!ALLOWED_OPERATIONS.has(operation as BeadOperation)) {
+    throw new Error(
+      `Invalid operation: must be one of ${Array.from(ALLOWED_OPERATIONS).join(", ")}`,
+    );
+  }
+}
+
+/**
+ * SECURITY: Validate WAL entry structure at runtime
+ * Ensures deserialized data matches expected schema
+ */
+function validateWALEntry(data: unknown): asserts data is BeadWALEntry {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid WAL entry: must be an object");
+  }
+
+  const entry = data as Record<string, unknown>;
+
+  // Validate required string fields
+  if (typeof entry.id !== "string" || !entry.id) {
+    throw new Error("Invalid WAL entry: missing or invalid id");
+  }
+  if (typeof entry.timestamp !== "string" || !entry.timestamp) {
+    throw new Error("Invalid WAL entry: missing or invalid timestamp");
+  }
+  if (typeof entry.checksum !== "string" || !entry.checksum) {
+    throw new Error("Invalid WAL entry: missing or invalid checksum");
+  }
+
+  // Validate beadId
+  validateBeadId(entry.beadId);
+
+  // Validate operation
+  validateOperation(entry.operation);
+
+  // Validate payload is an object
+  if (!entry.payload || typeof entry.payload !== "object" || Array.isArray(entry.payload)) {
+    throw new Error("Invalid WAL entry: payload must be an object");
+  }
+}
 
 /**
  * Operation types that can be recorded in WAL
@@ -63,12 +157,22 @@ export class BeadsWALAdapter {
   /**
    * Record a beads transition to WAL
    *
+   * SECURITY: Validates beadId and operation before recording to prevent
+   * path traversal and injection attacks.
+   *
    * @param entry - Partial entry (id, timestamp, checksum will be generated)
    * @returns WAL sequence number
+   * @throws Error if beadId or operation fails validation
    */
   async recordTransition(
     entry: Omit<BeadWALEntry, "id" | "timestamp" | "checksum">,
   ): Promise<number> {
+    // SECURITY: Validate beadId before using in path construction
+    validateBeadId(entry.beadId);
+
+    // SECURITY: Validate operation type
+    validateOperation(entry.operation);
+
     const fullEntry: BeadWALEntry = {
       ...entry,
       id: randomUUID(),
@@ -83,7 +187,8 @@ export class BeadsWALAdapter {
     );
 
     if (this.verbose) {
-      console.log(`[beads-wal] recorded ${entry.operation} for ${entry.beadId} (seq=${seq})`);
+      // SECURITY: Don't log full beadId in case of sensitive data
+      console.log(`[beads-wal] recorded ${entry.operation} (seq=${seq})`);
     }
 
     return seq;
@@ -93,7 +198,9 @@ export class BeadsWALAdapter {
    * Replay all beads transitions from WAL
    *
    * Used for crash recovery. Returns entries sorted by timestamp.
-   * Entries with invalid checksums are logged and skipped.
+   * Entries with invalid checksums or schema are logged and skipped.
+   *
+   * SECURITY: All deserialized entries are validated at runtime before use.
    *
    * @returns Array of validated BeadWALEntry objects
    */
@@ -105,22 +212,28 @@ export class BeadsWALAdapter {
       if (walEntry.operation === "write" && walEntry.path.startsWith(this.pathPrefix)) {
         try {
           if (!walEntry.data) {
-            console.warn(`[beads-wal] entry has no data: ${walEntry.path}`);
+            console.warn("[beads-wal] entry has no data, skipping");
             return;
           }
 
           // Decode base64 data from WAL
           const jsonStr = Buffer.from(walEntry.data, "base64").toString("utf-8");
-          const entry = JSON.parse(jsonStr) as BeadWALEntry;
+          const parsed: unknown = JSON.parse(jsonStr);
+
+          // SECURITY: Validate entry structure at runtime (throws on invalid)
+          validateWALEntry(parsed);
+          const entry = parsed as BeadWALEntry;
 
           // Verify integrity
           if (this.verifyChecksum(entry)) {
             entries.push(entry);
           } else {
-            console.warn(`[beads-wal] checksum mismatch for entry ${entry.id}, skipping`);
+            // SECURITY: Don't log entry details that may contain sensitive data
+            console.warn("[beads-wal] checksum mismatch, skipping entry");
           }
         } catch (e) {
-          console.error(`[beads-wal] failed to parse entry: ${e}`);
+          // SECURITY: Don't expose parsing error details
+          console.error("[beads-wal] failed to parse/validate entry, skipping");
         }
       }
     });
@@ -140,8 +253,10 @@ export class BeadsWALAdapter {
    *
    * Used for incremental sync operations.
    *
+   * SECURITY: All deserialized entries are validated at runtime before use.
+   *
    * @param seq - Sequence number to start from (exclusive)
-   * @returns Array of BeadWALEntry objects since that sequence
+   * @returns Array of validated BeadWALEntry objects since that sequence
    */
   async getTransitionsSince(seq: number): Promise<BeadWALEntry[]> {
     const walEntries = await this.wal.getEntriesSince(seq);
@@ -155,12 +270,17 @@ export class BeadsWALAdapter {
       ) {
         try {
           const jsonStr = Buffer.from(walEntry.data, "base64").toString("utf-8");
-          const entry = JSON.parse(jsonStr) as BeadWALEntry;
+          const parsed: unknown = JSON.parse(jsonStr);
+
+          // SECURITY: Validate entry structure at runtime (throws on invalid)
+          validateWALEntry(parsed);
+          const entry = parsed as BeadWALEntry;
+
           if (this.verifyChecksum(entry)) {
             beadEntries.push(entry);
           }
         } catch {
-          // Skip invalid entries
+          // Skip invalid entries (validation or parse failure)
         }
       }
     }
@@ -178,10 +298,13 @@ export class BeadsWALAdapter {
   }
 
   /**
-   * Compute SHA-256 checksum of payload (truncated to 16 chars)
+   * Compute SHA-256 checksum of payload (truncated to 32 hex chars = 128 bits)
+   *
+   * SECURITY: Uses 128-bit truncation for adequate collision resistance.
+   * 64-bit (16 chars) would be vulnerable to birthday attacks with ~2^32 entries.
    */
   private computeChecksum(payload: Record<string, unknown>): string {
-    return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
+    return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32);
   }
 
   /**

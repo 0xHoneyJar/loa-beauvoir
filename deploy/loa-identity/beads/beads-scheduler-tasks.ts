@@ -4,6 +4,9 @@
  * Registers periodic maintenance tasks for beads with the OpenClaw scheduler.
  * Includes health checks, auto-sync, and stale issue detection.
  *
+ * SECURITY: brCommand is validated to prevent command injection.
+ * Only 'br' or absolute paths without shell metacharacters are allowed.
+ *
  * @module beads-scheduler-tasks
  */
 
@@ -12,6 +15,29 @@ import { promisify } from "util";
 import type { Scheduler } from "../scheduler/scheduler.js";
 
 const execAsync = promisify(exec);
+
+/**
+ * SECURITY: Validate brCommand is safe
+ * Only allows 'br' or absolute paths to prevent arbitrary command execution
+ * @throws Error if brCommand contains unsafe characters
+ */
+function validateBrCommand(cmd: string): void {
+  if (cmd === "br") return;
+  // Allow absolute paths without spaces, semicolons, or other shell metacharacters
+  if (cmd.startsWith("/") && /^[a-zA-Z0-9/_.-]+$/.test(cmd)) return;
+  throw new Error(
+    "Invalid brCommand: must be 'br' or an absolute path without shell metacharacters",
+  );
+}
+
+/**
+ * SECURITY: Validate staleDays is a safe integer
+ */
+function validateStaleDays(days: number): void {
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new Error("Invalid staleDays: must be an integer between 1 and 365");
+  }
+}
 
 /**
  * Configuration for beads scheduler tasks
@@ -100,6 +126,12 @@ export function registerBeadsSchedulerTasks(
   config?: BeadsSchedulerConfig,
 ): void {
   const cfg = mergeConfig(DEFAULT_CONFIG, config);
+
+  // SECURITY: Validate configuration before registering tasks
+  validateBrCommand(cfg.brCommand);
+  if (cfg.staleCheck.staleDays !== undefined) {
+    validateStaleDays(cfg.staleCheck.staleDays);
+  }
 
   // Health check task
   if (cfg.healthCheck.enabled) {
