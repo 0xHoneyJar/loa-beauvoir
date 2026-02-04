@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Resume a halted run from last checkpoint. Validates state, verifies branch integrity, and continues execution.
+Resume a halted run from last checkpoint. Resolves circuit breakers, validates branch integrity, and continues execution.
+
+**Primary data source**: BeadsRunStateManager (Phase 4+)
+**Fallback**: .run/ state files (legacy, deprecated)
 
 ## Usage
 
@@ -10,148 +13,135 @@ Resume a halted run from last checkpoint. Validates state, verifies branch integ
 /run-resume
 /run-resume --reset-ice
 /run-resume --force
+/run-resume --legacy        # Force .run/ files only (deprecated)
 ```
 
 ## Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--reset-ice` | Reset circuit breaker before resuming | false |
-| `--force` | Skip branch divergence check | false |
+| Option        | Description                                  | Default |
+| ------------- | -------------------------------------------- | ------- |
+| `--reset-ice` | Resolve all circuit breakers before resuming | false   |
+| `--force`     | Skip branch divergence check                 | false   |
+| `--legacy`    | Use .run/ files only (deprecated)            | false   |
 
 ## Pre-flight Checks
 
-```bash
-preflight_resume() {
-  local state_file=".run/state.json"
-  local cb_file=".run/circuit-breaker.json"
+### Primary: BeadsRunStateManager
 
-  # 1. Verify state file exists
-  if [[ ! -f "$state_file" ]]; then
-    echo "ERROR: No run state found"
-    echo "Start a new run with /run sprint-N"
-    exit 1
-  fi
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
 
-  # 2. Verify state is HALTED
-  local current_state=$(jq -r '.state' "$state_file")
-  if [[ "$current_state" != "HALTED" ]]; then
-    echo "ERROR: Run is not halted (state: $current_state)"
-    if [[ "$current_state" == "RUNNING" ]]; then
-      echo "Run is already in progress. Use /run-status to check."
-    elif [[ "$current_state" == "JACKED_OUT" ]]; then
-      echo "Run is already complete. Start a new run with /run sprint-N"
-    fi
-    exit 1
-  fi
+async function preflightResume(resetIce: boolean, force: boolean) {
+  const manager = createBeadsRunStateManager();
+  const state = await manager.getRunState();
 
-  # 3. Verify branch matches
-  local expected_branch=$(jq -r '.branch' "$state_file")
-  local current_branch=$(git branch --show-current)
+  // 1. Verify state is HALTED
+  if (state === "READY") {
+    console.log("ERROR: No run in progress");
+    console.log("Start a new run with /run sprint-N");
+    process.exit(1);
+  }
 
-  if [[ "$current_branch" != "$expected_branch" ]]; then
-    echo "ERROR: Branch mismatch"
-    echo "Expected: $expected_branch"
-    echo "Current:  $current_branch"
-    echo ""
-    echo "Checkout the correct branch:"
-    echo "  git checkout $expected_branch"
-    exit 1
-  fi
+  if (state === "RUNNING") {
+    console.log("ERROR: Run is already in progress");
+    console.log("Use /run-status to check current state.");
+    process.exit(1);
+  }
 
-  # 4. Verify branch hasn't diverged (unless --force)
-  if [[ "$1" != "--force" ]]; then
-    check_branch_divergence "$expected_branch"
-  fi
+  if (state === "COMPLETE") {
+    console.log("ERROR: Run is already complete");
+    console.log("Start a new run with /run sprint-N");
+    process.exit(1);
+  }
 
-  # 5. Check circuit breaker state
-  if [[ -f "$cb_file" ]]; then
-    local cb_state=$(jq -r '.state' "$cb_file")
-    if [[ "$cb_state" == "OPEN" && "$2" != "--reset-ice" ]]; then
-      echo "WARNING: Circuit breaker is OPEN"
-      echo ""
-      show_circuit_breaker_reason
-      echo ""
-      echo "To reset and continue:"
-      echo "  /run-resume --reset-ice"
-      echo ""
-      echo "To continue without reset (may halt again):"
-      echo "  /run-resume --force"
-      exit 1
-    fi
-  fi
+  // state === 'HALTED' - this is what we want
+
+  // 2. Check for active circuit breakers
+  const circuitBreakers = await manager.getActiveCircuitBreakers();
+
+  if (circuitBreakers.length > 0 && !resetIce) {
+    console.log("WARNING: Circuit breaker is OPEN");
+    console.log("");
+
+    for (const cb of circuitBreakers) {
+      console.log(`Circuit breaker: ${cb.beadId}`);
+      console.log(`  Sprint:    ${cb.sprintId}`);
+      console.log(`  Reason:    ${cb.reason}`);
+      console.log(`  Failures:  ${cb.failureCount}x`);
+      console.log(`  Created:   ${cb.createdAt}`);
+    }
+
+    console.log("");
+    console.log("To resolve circuit breakers and continue:");
+    console.log("  /run-resume --reset-ice");
+    console.log("");
+    console.log("To view circuit breakers:");
+    console.log("  br list --label circuit-breaker --status open");
+    process.exit(1);
+  }
+
+  // 3. Verify branch matches (if not --force)
+  if (!force) {
+    await checkBranchDivergence();
+  }
 }
 ```
 
 ### Check Branch Divergence
 
-```bash
-check_branch_divergence() {
-  local branch="$1"
+```typescript
+async function checkBranchDivergence() {
+  const exec = promisify(require("child_process").exec);
 
-  # Fetch latest from remote
-  git fetch origin "$branch" 2>/dev/null || true
+  const { stdout: currentBranch } = await exec("git branch --show-current");
+  const branch = currentBranch.trim();
 
-  # Check if local and remote have diverged
-  local local_head=$(git rev-parse HEAD)
-  local remote_head=$(git rev-parse "origin/$branch" 2>/dev/null || echo "none")
+  // Fetch latest from remote
+  try {
+    await exec(`git fetch origin ${branch}`);
+  } catch {
+    // Remote branch may not exist, that's fine
+    return;
+  }
 
-  if [[ "$remote_head" == "none" ]]; then
-    # Remote branch doesn't exist yet, that's fine
-    return 0
-  fi
+  const { stdout: localHead } = await exec("git rev-parse HEAD");
+  let remoteHead: string;
+  try {
+    const { stdout } = await exec(`git rev-parse origin/${branch}`);
+    remoteHead = stdout.trim();
+  } catch {
+    // Remote branch doesn't exist yet
+    return;
+  }
 
-  # Check if they're the same
-  if [[ "$local_head" == "$remote_head" ]]; then
-    return 0
-  fi
+  // Check if they're the same
+  if (localHead.trim() === remoteHead) {
+    return;
+  }
 
-  # Check if local is ahead of remote (that's fine)
-  if git merge-base --is-ancestor "origin/$branch" HEAD; then
-    return 0
-  fi
+  // Check if local is ahead of remote (that's fine)
+  try {
+    await exec(`git merge-base --is-ancestor origin/${branch} HEAD`);
+    return; // Local is ahead, that's fine
+  } catch {
+    // Branch has diverged
+  }
 
-  # Branch has diverged
-  echo "ERROR: Branch has diverged from remote"
-  echo ""
-  echo "Local:  $local_head"
-  echo "Remote: $remote_head"
-  echo ""
-  echo "This can happen if:"
-  echo "  - Someone else pushed to the branch"
-  echo "  - You made changes outside of Run Mode"
-  echo ""
-  echo "To force resume (may cause conflicts):"
-  echo "  /run-resume --force"
-  echo ""
-  echo "To sync with remote first:"
-  echo "  git pull --rebase origin $branch"
-  exit 1
-}
-```
-
-### Show Circuit Breaker Reason
-
-```bash
-show_circuit_breaker_reason() {
-  local cb_file=".run/circuit-breaker.json"
-
-  if [[ ! -f "$cb_file" ]]; then
-    return
-  fi
-
-  local last_trip=$(jq '.history[-1]' "$cb_file")
-
-  if [[ "$last_trip" != "null" ]]; then
-    local trigger=$(echo "$last_trip" | jq -r '.trigger')
-    local reason=$(echo "$last_trip" | jq -r '.reason')
-    local timestamp=$(echo "$last_trip" | jq -r '.timestamp')
-
-    echo "Circuit breaker tripped:"
-    echo "  Trigger:   $trigger"
-    echo "  Reason:    $reason"
-    echo "  Timestamp: $timestamp"
-  fi
+  console.log("ERROR: Branch has diverged from remote");
+  console.log("");
+  console.log(`Local:  ${localHead.trim()}`);
+  console.log(`Remote: ${remoteHead}`);
+  console.log("");
+  console.log("This can happen if:");
+  console.log("  - Someone else pushed to the branch");
+  console.log("  - You made changes outside of Run Mode");
+  console.log("");
+  console.log("To force resume (may cause conflicts):");
+  console.log("  /run-resume --force");
+  console.log("");
+  console.log(`To sync with remote first:`);
+  console.log(`  git pull --rebase origin ${branch}`);
+  process.exit(1);
 }
 ```
 
@@ -159,105 +149,62 @@ show_circuit_breaker_reason() {
 
 ### Resume Run
 
-```bash
-resume_run() {
-  local reset_ice="${1:-false}"
-  local state_file=".run/state.json"
-  local cb_file=".run/circuit-breaker.json"
-  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
 
-  # Get run info
-  local run_id=$(jq -r '.run_id' "$state_file")
-  local target=$(jq -r '.target' "$state_file")
-  local phase=$(jq -r '.phase' "$state_file")
-  local current_cycle=$(jq '.cycles.current' "$state_file")
+async function resumeRun(resetIce: boolean) {
+  const manager = createBeadsRunStateManager();
 
-  echo "[RESUME] Continuing run $run_id..."
-  echo "Target: $target"
-  echo "Phase: $phase"
-  echo "Cycle: $current_cycle"
+  // Get current sprint info
+  const currentSprint = await manager.getCurrentSprint();
+  const sprints = await manager.getSprintPlan();
 
-  # Reset circuit breaker if requested
-  if [[ "$reset_ice" == "true" ]]; then
-    reset_circuit_breaker
-  fi
+  console.log("[RESUME] Continuing run...");
+  if (currentSprint) {
+    console.log(`Sprint: ${currentSprint.sprintNumber}`);
+    console.log(`Tasks: ${currentSprint.tasksCompleted}/${currentSprint.tasksTotal}`);
+  }
 
-  # Update state to RUNNING
-  jq --arg ts "$timestamp" '
-    .state = "RUNNING" |
-    del(.halt) |
-    .timestamps.last_activity = $ts
-  ' "$state_file" > "$state_file.tmp"
-  mv "$state_file.tmp" "$state_file"
+  // Reset circuit breakers if requested
+  if (resetIce) {
+    await resetCircuitBreakers(manager);
+  }
 
-  echo ""
-  echo "✓ State updated to RUNNING"
-  echo ""
-  echo "Continuing from $phase phase..."
+  // Resume the run (this clears HALTED state)
+  await manager.resumeRun();
 
-  # Continue execution based on phase
-  continue_from_phase "$target" "$phase"
+  console.log("");
+  console.log("✓ State updated to RUNNING");
+  console.log("");
+  console.log("Run will resume execution.");
+
+  // Continue execution based on current sprint
+  if (currentSprint) {
+    console.log(`Continuing sprint ${currentSprint.sprintNumber}...`);
+  } else {
+    // Find next pending sprint
+    const pendingSprints = sprints.filter((s) => s.status === "pending");
+    if (pendingSprints.length > 0) {
+      console.log(`Starting sprint ${pendingSprints[0].sprintNumber}...`);
+    }
+  }
 }
 ```
 
-### Reset Circuit Breaker
+### Reset Circuit Breakers
 
-```bash
-reset_circuit_breaker() {
-  local cb_file=".run/circuit-breaker.json"
-  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+```typescript
+async function resetCircuitBreakers(manager: BeadsRunStateManager) {
+  console.log("Resolving circuit breakers...");
 
-  echo "Resetting circuit breaker..."
+  const circuitBreakers = await manager.getActiveCircuitBreakers();
 
-  jq --arg ts "$timestamp" '
-    .state = "CLOSED" |
-    .triggers.same_issue.count = 0 |
-    .triggers.same_issue.last_hash = null |
-    .triggers.no_progress.count = 0 |
-    .triggers.cycle_count.current = 0 |
-    .triggers.timeout.started = $ts
-  ' "$cb_file" > "$cb_file.tmp"
-  mv "$cb_file.tmp" "$cb_file"
+  for (const cb of circuitBreakers) {
+    console.log(`  Resolving ${cb.beadId}...`);
+    await manager.resolveCircuitBreaker(cb.beadId);
+  }
 
-  echo "✓ Circuit breaker reset"
-}
-```
-
-### Continue From Phase
-
-```bash
-continue_from_phase() {
-  local target="$1"
-  local phase="$2"
-
-  case "$phase" in
-    "INIT")
-      # Start from beginning
-      echo "Restarting from initialization..."
-      # Continue with /run logic
-      ;;
-    "IMPLEMENT")
-      echo "Resuming implementation..."
-      # /implement $target then continue loop
-      ;;
-    "REVIEW")
-      echo "Resuming from review..."
-      # /review-sprint $target then continue loop
-      ;;
-    "AUDIT")
-      echo "Resuming from audit..."
-      # /audit-sprint $target then continue loop
-      ;;
-    *)
-      echo "Unknown phase: $phase"
-      echo "Starting from implementation..."
-      ;;
-  esac
-
-  # The actual continuation happens in the /run command
-  # This command just validates and updates state
-  echo ""
-  echo "Ready to continue. The run will resume execution."
+  console.log(`✓ ${circuitBreakers.length} circuit breaker(s) resolved`);
 }
 ```
 
@@ -266,63 +213,72 @@ continue_from_phase() {
 ### Successful Resume
 
 ```
-[RESUME] Continuing run run-20260119-abc123...
-Target: sprint-3
-Phase: REVIEW
-Cycle: 3
+[RESUME] Continuing run...
+Sprint: 2
+Tasks: 3/5
 
 ✓ State updated to RUNNING
 
-Continuing from REVIEW phase...
-Resuming from review...
-
-Ready to continue. The run will resume execution.
+Run will resume execution.
+Continuing sprint 2...
 ```
 
 ### With Circuit Breaker Reset
 
 ```
-[RESUME] Continuing run run-20260119-abc123...
-Target: sprint-3
-Phase: IMPLEMENT
-Cycle: 4
+[RESUME] Continuing run...
+Sprint: 2
+Tasks: 2/5
 
-Resetting circuit breaker...
-✓ Circuit breaker reset
+Resolving circuit breakers...
+  Resolving cb-abc123...
+✓ 1 circuit breaker(s) resolved
 
 ✓ State updated to RUNNING
 
-Continuing from IMPLEMENT phase...
-Resuming implementation...
-
-Ready to continue. The run will resume execution.
+Run will resume execution.
+Continuing sprint 2...
 ```
 
 ## Error Cases
 
-### No State Found
+### No Run In Progress
 
 ```
-ERROR: No run state found
+ERROR: No run in progress
 Start a new run with /run sprint-N
 ```
 
-### Run Not Halted
+### Run Already Running
 
 ```
-ERROR: Run is not halted (state: RUNNING)
-Run is already in progress. Use /run-status to check.
+ERROR: Run is already in progress
+Use /run-status to check current state.
 ```
 
-### Branch Mismatch
+### Run Complete
 
 ```
-ERROR: Branch mismatch
-Expected: feature/sprint-3
-Current:  main
+ERROR: Run is already complete
+Start a new run with /run sprint-N
+```
 
-Checkout the correct branch:
-  git checkout feature/sprint-3
+### Circuit Breaker Open
+
+```
+WARNING: Circuit breaker is OPEN
+
+Circuit breaker: cb-abc123
+  Sprint:    sprint-2
+  Reason:    Same finding repeated 3 times
+  Failures:  3x
+  Created:   2026-01-19T14:25:00Z
+
+To resolve circuit breakers and continue:
+  /run-resume --reset-ice
+
+To view circuit breakers:
+  br list --label circuit-breaker --status open
 ```
 
 ### Branch Diverged
@@ -341,83 +297,105 @@ To force resume (may cause conflicts):
   /run-resume --force
 
 To sync with remote first:
-  git pull --rebase origin feature/sprint-3
-```
-
-### Circuit Breaker Open
-
-```
-WARNING: Circuit breaker is OPEN
-
-Circuit breaker tripped:
-  Trigger:   same_issue
-  Reason:    Same finding repeated 3 times
-  Timestamp: 2026-01-19T14:25:00Z
-
-To reset and continue:
-  /run-resume --reset-ice
-
-To continue without reset (may halt again):
-  /run-resume --force
+  git pull --rebase origin feature/sprint-2
 ```
 
 ## State After Resume
 
-### state.json
+### Beads State Query
 
-```json
-{
-  "run_id": "run-20260119-abc123",
-  "target": "sprint-3",
-  "branch": "feature/sprint-3",
-  "state": "RUNNING",
-  "phase": "REVIEW",
-  "timestamps": {
-    "started": "2026-01-19T10:00:00Z",
-    "last_activity": "2026-01-19T15:00:00Z"
-  },
-  "cycles": {
-    "current": 3,
-    "limit": 20,
-    "history": [...]
-  },
-  "metrics": {...}
-}
+```typescript
+const manager = createBeadsRunStateManager();
+const state = await manager.getRunState(); // Returns "RUNNING"
+const cbs = await manager.getActiveCircuitBreakers(); // Returns [] (empty)
 ```
 
-Note: The `halt` field is removed on resume.
+### Beads Commands
+
+```bash
+# Run bead no longer has circuit-breaker label
+br show <run-id>
+# Labels: run:current
+
+# Circuit breaker beads are closed
+br list --label circuit-breaker --status open
+# Returns: []
+
+# In-progress sprint
+br list --label sprint:in_progress
+# Returns: [{ id: "sprint-x", ... }]
+```
+
+## How Circuit Breaker Resolution Works
+
+When `--reset-ice` is used:
+
+1. Query all open circuit breakers: `br list --label circuit-breaker --status open`
+2. For each circuit breaker:
+   - Close the bead: `br close <cb-id>`
+   - Add resolution comment: `br comments add <cb-id> "Resolved at <timestamp>"`
+3. Remove circuit-breaker label from run: `br label remove <run-id> circuit-breaker`
+
+This changes the run state from HALTED back to RUNNING.
 
 ## Example Session
 
 ```
 > /run-resume --reset-ice
 
-[RESUME] Continuing run run-20260119-abc123...
-Target: sprint-3
-Phase: REVIEW
-Cycle: 3
+[RESUME] Continuing run...
+Sprint: 2
+Tasks: 3/5
 
-Resetting circuit breaker...
-✓ Circuit breaker reset
+Resolving circuit breakers...
+  Resolving cb-abc123...
+✓ 1 circuit breaker(s) resolved
 
 ✓ State updated to RUNNING
 
-Continuing from REVIEW phase...
-Resuming from review...
+Run will resume execution.
+Continuing sprint 2...
 
-Ready to continue. The run will resume execution.
+[RUNNING] Sprint 2 continuing...
+→ Task: task-4 (3/5)
+  Implementing...
+  ✓ Implementation complete
 
-[RUNNING] Cycle 3 continuing...
-→ Phase: REVIEW
-  Executing /review-sprint sprint-3...
+→ Task: task-5 (4/5)
+  Implementing...
+  ✓ Implementation complete
+
+[REVIEW] Running /review-sprint 2...
   ✓ All good
 
-→ Phase: AUDIT
-  Executing /audit-sprint sprint-3...
-  ✓ APPROVED - LET'S FUCKING GO
+[AUDIT] Running /audit-sprint 2...
+  ✓ APPROVED
 
-[COMPLETE] All checks passed!
+[COMPLETE] Sprint 2 finished!
 ...
+```
+
+## Fallback: Legacy .run/ Files (Deprecated)
+
+```bash
+preflight_resume_legacy() {
+  local state_file=".run/state.json"
+  local cb_file=".run/circuit-breaker.json"
+
+  # DEPRECATED
+  echo "[DEPRECATION WARNING] Using legacy .run/ files."
+  echo "Migrate to beads with: BeadsRunStateManager.migrateFromDotRun('.run')"
+  echo ""
+
+  # 1. Verify state file exists
+  if [[ ! -f "$state_file" ]]; then
+    echo "ERROR: No run state found"
+    echo "Start a new run with /run sprint-N"
+    exit 1
+  fi
+
+  # ... rest of legacy implementation
+}
 ```
 
 ## Related
@@ -425,3 +403,4 @@ Ready to continue. The run will resume execution.
 - `/run-halt` - Stop execution
 - `/run-status` - Check current state
 - `/run sprint-N` - Start new run
+- `BeadsRunStateManager` - TypeScript API for state management
