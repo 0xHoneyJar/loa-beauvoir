@@ -35,12 +35,19 @@ export function createSoulGenerator(
   let lastBeauvoirChecksum: string | null = null;
 
   /**
+   * Calculate checksum from content string
+   */
+  function calculateChecksumFromContent(content: string): string {
+    return crypto.createHash(CHECKSUM_ALGORITHM).update(content).digest('hex').slice(0, 12);
+  }
+
+  /**
    * Calculate checksum of a file
    */
   async function calculateChecksum(filePath: string): Promise<string> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      return crypto.createHash(CHECKSUM_ALGORITHM).update(content).digest('hex').slice(0, 12);
+      return calculateChecksumFromContent(content);
     } catch {
       return '';
     }
@@ -163,21 +170,24 @@ export function createSoulGenerator(
   return {
     async generate(): Promise<SoulGenerationResult> {
       try {
-        // Check if BEAUVOIR.md exists
+        // Read BEAUVOIR.md content directly (avoid TOCTOU race condition)
+        let beauvoirContent: string;
         try {
-          await fs.access(beauvoirPath);
-        } catch {
-          return {
-            success: false,
-            error: `BEAUVOIR.md not found at ${beauvoirPath}`,
-          };
+          beauvoirContent = await fs.readFile(beauvoirPath, 'utf-8');
+        } catch (err) {
+          // Handle file not found or read errors
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            return {
+              success: false,
+              error: `BEAUVOIR.md not found at ${beauvoirPath}`,
+            };
+          }
+          throw err;
         }
 
-        // Read BEAUVOIR.md content
-        const beauvoirContent = await fs.readFile(beauvoirPath, 'utf-8');
-
-        // Calculate checksum for integrity verification (FR-1.6)
-        const checksum = await calculateChecksum(beauvoirPath);
+        // Calculate checksum from already-loaded content (FR-1.6)
+        const checksum = calculateChecksumFromContent(beauvoirContent);
         lastBeauvoirChecksum = checksum;
 
         // Transform to SOUL.md format
