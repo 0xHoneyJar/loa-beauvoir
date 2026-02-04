@@ -21,6 +21,7 @@ echo "[loa-dev] Loa Development Mode"
 echo "[loa-dev] =============================================="
 echo "[loa-dev] BEAUVOIR_DEV_MODE=${BEAUVOIR_DEV_MODE:-not set}"
 echo "[loa-dev] CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-not set}"
+echo "[loa-dev] LOA_SOUL_SOURCE=${LOA_SOUL_SOURCE:-/workspace/grimoires/loa/BEAUVOIR.md}"
 if [ -n "${CLAWDBOT_GATEWAY_TOKEN:-}" ]; then
     echo "[loa-dev] CLAWDBOT_GATEWAY_TOKEN=<set>"
 else
