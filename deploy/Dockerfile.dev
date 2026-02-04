@@ -1,11 +1,13 @@
 # =============================================================================
 # Loa Development Image
 # =============================================================================
-# Self-contained dev image that builds from base and adds hot-reload tools.
+# Self-contained dev image that uses locally-built OpenClaw with LOA integration.
 # Does NOT depend on any pre-built images from GHCR.
 #
 # Build context: Repository root (.)
 # Build command: docker build -f deploy/Dockerfile.dev -t loa-dev:local .
+#
+# Prerequisites: Run `pnpm build` before building this image.
 # =============================================================================
 
 FROM docker.io/cloudflare/sandbox:0.7.0
@@ -49,12 +51,8 @@ RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux
 RUN npm install -g pnpm@10 tsx
 
 # =============================================================================
-# Stage 2: OpenClaw Gateway
+# Stage 2: OpenClaw Gateway (local build with LOA integration)
 # =============================================================================
-
-# Install clawdbot
-RUN npm install -g clawdbot@2026.1.24-3 \
-    && clawdbot --version
 
 # Create directory structure
 RUN mkdir -p \
@@ -66,8 +64,25 @@ RUN mkdir -p \
     /data/wal \
     /root/.openclaw
 
+# Copy package files and install dependencies
+COPY package.json pnpm-lock.yaml /workspace/
+WORKDIR /workspace
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Copy built dist and entry point (built locally via `pnpm build`)
+COPY dist/ /workspace/dist/
+COPY openclaw.mjs /workspace/
+COPY docs/reference/templates/ /workspace/docs/reference/templates/
+COPY assets/ /workspace/assets/
+COPY skills/ /workspace/skills/
+
+# Create clawdbot symlink for compatibility
+RUN ln -sf /workspace/openclaw.mjs /usr/local/bin/clawdbot \
+    && chmod +x /workspace/openclaw.mjs \
+    && node /workspace/openclaw.mjs --version
+
 # =============================================================================
-# Stage 3: Copy local files (for dev, these are mounted as volumes)
+# Stage 3: Copy Loa files
 # =============================================================================
 
 # Copy startup script

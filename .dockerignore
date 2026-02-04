@@ -31,16 +31,16 @@ coverage
 tmp
 **/tmp
 
-# build artifacts
-dist
-**/dist
+# build artifacts (allow dist for Docker build)
+# dist - INCLUDED for LOA dev build
+# **/dist - INCLUDED for LOA dev build
 apps/macos/.build
 apps/ios/build
 **/*.trace
 
 # large app trees not needed for CLI build
 apps/
-assets/
+# assets/ - INCLUDED for LOA dev build
 Peekaboo/
 Swabble/
 Core/

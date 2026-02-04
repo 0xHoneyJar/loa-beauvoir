@@ -4,6 +4,7 @@ import path from "node:path";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
+import { tryGenerateSoulFromBeauvoir } from "./loa-soul-generator.js";
 import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
 
 export function resolveDefaultAgentWorkspaceDir(
@@ -175,7 +176,9 @@ export async function ensureAgentWorkspace(params?: {
   const bootstrapTemplate = await loadTemplate(DEFAULT_BOOTSTRAP_FILENAME);
 
   await writeFileIfMissing(agentsPath, agentsTemplate);
-  await writeFileIfMissing(soulPath, soulTemplate);
+  // LOA Integration: Generate SOUL.md from BEAUVOIR.md if available
+  const loaSoul = await tryGenerateSoulFromBeauvoir(dir);
+  await writeFileIfMissing(soulPath, loaSoul ?? soulTemplate);
   await writeFileIfMissing(toolsPath, toolsTemplate);
   await writeFileIfMissing(identityPath, identityTemplate);
   await writeFileIfMissing(userPath, userTemplate);
