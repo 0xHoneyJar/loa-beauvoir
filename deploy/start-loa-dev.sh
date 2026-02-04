@@ -75,6 +75,11 @@ mkdir -p /workspace/deploy/loa-identity/node_modules/@noble
 ln -sf /usr/local/lib/node_modules/@noble/ed25519 /workspace/deploy/loa-identity/node_modules/@noble/ed25519 2>/dev/null || true
 ln -sf /usr/local/lib/node_modules/@noble/hashes /workspace/deploy/loa-identity/node_modules/@noble/hashes 2>/dev/null || true
 
+# Symlink grimoires to agent workspace (LOA expects them at workspace/grimoires/loa)
+mkdir -p /root/clawd/grimoires
+ln -sf /workspace/grimoires/loa /root/clawd/grimoires/loa 2>/dev/null || true
+echo "[loa-dev] Grimoires linked to agent workspace"
+
 # Install LOA plugin if available
 if [ -d "/workspace/extensions/loa" ]; then
     echo "[loa-dev] Installing LOA plugin..."
