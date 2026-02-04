@@ -47,6 +47,43 @@ fi
 
 echo "[loa-dev] clawdbot version: $(clawdbot --version 2>/dev/null || echo 'unknown')"
 
+# Configure gateway for development (token auth)
+echo "[loa-dev] Configuring gateway for dev mode..."
+clawdbot onboard \
+    --non-interactive \
+    --accept-risk \
+    --flow quickstart \
+    --mode local \
+    --gateway-bind lan \
+    --gateway-auth token \
+    --gateway-token "${CLAWDBOT_GATEWAY_TOKEN:-loa-dev-token-local}" \
+    --skip-channels \
+    --skip-skills \
+    --skip-health \
+    --skip-ui \
+    --no-install-daemon \
+    2>/dev/null || echo "[loa-dev] Onboard already configured"
+
+# Auto-approve pending device pairing requests in dev mode
+# This runs in background to continuously approve new devices
+if [ "${BEAUVOIR_DEV_MODE:-0}" = "1" ]; then
+    echo "[loa-dev] Starting device auto-approver (dev mode)..."
+    (
+        sleep 10  # Wait for gateway to start
+        while true; do
+            # Get pending device IDs and approve them
+            pending=$(clawdbot devices list --json 2>/dev/null | jq -r '.pending[]?.requestId // empty' 2>/dev/null)
+            if [ -n "$pending" ]; then
+                for req_id in $pending; do
+                    echo "[loa-dev] Auto-approving device: $req_id"
+                    clawdbot devices approve "$req_id" 2>/dev/null || true
+                done
+            fi
+            sleep 5
+        done
+    ) &
+fi
+
 # Check if entr is available
 if ! command -v entr &>/dev/null; then
     echo "[loa-dev] WARNING: entr not installed, running without hot-reload"
