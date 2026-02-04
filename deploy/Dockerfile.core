@@ -1,0 +1,134 @@
+# =============================================================================
+# Loa Core Image - Minimal runtime for rapid deployment
+# =============================================================================
+# Size target: <800MB compressed
+# Boot time: <30 seconds
+# Contains: Node.js 22, Gateway, basic tools
+# Does NOT contain: Rust, ck-search, beads, sentence-transformers, Chromium
+#
+# This implements the "netinstall" pattern:
+# - Core boots fast with essential functionality
+# - Optimization tools load in background after startup
+# - Tools persist to R2 volume for subsequent restarts
+#
+# Build: docker build -f deploy/Dockerfile.core -t loa-core:local deploy/
+# =============================================================================
+
+FROM docker.io/cloudflare/sandbox:0.7.0
+
+# Cache bust for fresh builds
+ARG CACHE_BUST=2026-02-04-core-v1
+RUN echo "Build: $CACHE_BUST"
+
+# -----------------------------------------------------------------------------
+# Stage 1: Minimal System Dependencies
+# -----------------------------------------------------------------------------
+# Only essential tools - NO build dependencies, NO Python ML packages
+# This keeps the image lean for fast pushes
+# -----------------------------------------------------------------------------
+
+ENV NODE_VERSION=22.13.1
+
+# Install system packages first
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xz-utils \
+    ca-certificates \
+    rsync \
+    ripgrep \
+    jq \
+    git \
+    curl \
+    tmux \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js with retry logic for flaky connections
+# SECURITY: Removed -k flag that disabled TLS verification (HIGH-002 remediation)
+# Added checksum verification for supply chain security (MEDIUM-001 remediation)
+ARG NODE_CHECKSUM=1ed717c6190a1ceb5a6f6f148ad0e93ee9820f6e0cfe2850ef7abfed7f40e490
+RUN for i in 1 2 3; do \
+        curl -fsSL --retry 3 --retry-delay 5 \
+            https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+            -o /tmp/node.tar.xz && break || sleep 10; \
+    done \
+    && echo "${NODE_CHECKSUM}  /tmp/node.tar.xz" | sha256sum -c - \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && node --version \
+    && npm --version
+
+# Install yq (lightweight YAML processor - required by Loa)
+# SECURITY: Pin to specific version with checksum verification (MEDIUM-001 remediation)
+ARG YQ_VERSION=4.44.1
+ARG YQ_CHECKSUM=a3f69e11ef98ce0f0e7d5f0bc57e53846a95fe0a6d3f407c7d85ef1b54512e6f
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq \
+    && echo "${YQ_CHECKSUM}  /usr/local/bin/yq" | sha256sum -c - \
+    && chmod +x /usr/local/bin/yq \
+    && yq --version
+
+# Install pnpm globally
+RUN npm install -g pnpm@10
+
+# -----------------------------------------------------------------------------
+# Stage 2: Gateway Installation
+# -----------------------------------------------------------------------------
+
+# Install clawdbot - same version as moltworker for compatibility
+RUN npm install -g clawdbot@2026.1.24-3 \
+    && clawdbot --version
+
+# Create directory structure
+RUN mkdir -p \
+    /workspace \
+    /workspace/.claude \
+    /workspace/grimoires/loa \
+    /workspace/deploy/loa-identity \
+    /data/tools \
+    /data/moltbot \
+    /data/wal \
+    /root/.openclaw \
+    /root/.cargo/bin
+
+# Add cargo bin to PATH for when tools are installed later
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# -----------------------------------------------------------------------------
+# Stage 3: Loa Identity Layer
+# -----------------------------------------------------------------------------
+
+# Fetch Loa framework and identity files from GitHub
+ARG LOA_REPO=https://github.com/0xHoneyJar/loa-beauvoir.git
+ARG LOA_BRANCH=main
+
+RUN git clone --depth 1 --branch ${LOA_BRANCH} ${LOA_REPO} /tmp/loa-repo \
+    && cp -r /tmp/loa-repo/.claude/* /workspace/.claude/ \
+    && cp -r /tmp/loa-repo/grimoires/* /workspace/grimoires/ \
+    && cp /tmp/loa-repo/.loa-version.json /workspace/ 2>/dev/null || echo '{"framework_version":"1.27.0"}' > /workspace/.loa-version.json \
+    && rm -rf /tmp/loa-repo
+
+# Copy deployment configuration from build context
+COPY start-loa.sh /usr/local/bin/start-loa.sh
+COPY loa-identity/ /workspace/deploy/loa-identity/
+
+# Make executable and create symlink for moltworker compatibility
+RUN chmod +x /usr/local/bin/start-loa.sh \
+    && ln -sf /usr/local/bin/start-loa.sh /usr/local/bin/start-moltbot.sh
+
+# -----------------------------------------------------------------------------
+# Runtime Configuration
+# -----------------------------------------------------------------------------
+
+WORKDIR /workspace
+
+# Expose ports: 3000 for SDK health checks, 18789 for gateway
+EXPOSE 3000 18789
+
+# Environment - critical for Loa identity isolation
+ENV CLAUDE_CONFIG_DIR=/workspace/.claude
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
+# Tool loading configuration
+ENV LOA_TOOL_DIR=/data/tools
+ENV LOA_DEFERRED_TOOLS=true
+
+# NO ENTRYPOINT - The base image handles SDK communication
+# The Worker will call /usr/local/bin/start-moltbot.sh via startProcess()
