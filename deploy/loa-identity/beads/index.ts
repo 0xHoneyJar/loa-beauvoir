@@ -59,3 +59,15 @@ export {
   type BeadsPersistenceConfig,
   type BeadsPersistenceStatus,
 } from "./beads-persistence-service.js";
+
+// Run State Manager (Phase 4)
+export {
+  BeadsRunStateManager,
+  createBeadsRunStateManager,
+  LABELS,
+  type RunState,
+  type SprintState,
+  type CircuitBreakerRecord,
+  type MigrationResult,
+  type BeadsRunStateConfig,
+} from "./beads-run-state.js";
