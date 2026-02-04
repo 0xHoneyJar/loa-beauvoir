@@ -203,7 +203,9 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
     config.channels.telegram = config.channels.telegram || {};
     config.channels.telegram.botToken = process.env.TELEGRAM_BOT_TOKEN;
     config.channels.telegram.enabled = true;
-    console.log('[loa] Telegram channel configured');
+    // Allow specific Telegram user IDs without pairing
+    config.channels.telegram.allowlist = ['5965244754'];
+    console.log('[loa] Telegram channel configured with allowlist');
 }
 
 // Discord configuration
