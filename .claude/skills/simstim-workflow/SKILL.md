@@ -9,10 +9,11 @@ interactively while HIGH_CONSENSUS findings auto-integrate.
 </objective>
 
 <input_guardrails>
+
 - PII filter: enabled
 - Injection detection: enabled
 - Danger level: moderate (orchestration, not direct execution)
-</input_guardrails>
+  </input_guardrails>
 
 <context>
 You are executing the /simstim command, a HITL (Human-In-The-Loop) workflow that chains:
@@ -35,6 +36,7 @@ State is tracked in `.run/simstim-state.json` for resume capability.
 Display: `[0/8] PREFLIGHT - Validating configuration...`
 
 1. Check configuration:
+
    ```bash
    result=$(.claude/scripts/simstim-orchestrator.sh --preflight ${DRY_RUN:+--dry-run} ${FROM:+--from "$FROM"} ${RESUME:+--resume} ${ABORT:+--abort})
    ```
@@ -52,11 +54,12 @@ Display: `[0/8] PREFLIGHT - Validating configuration...`
 5. If --resume: Jump to <resume_support> section
 
 6. Otherwise: Continue to Phase 1 or specified --from phase
-</preflight>
+   </preflight>
 
 ---
 
 <phase_1_discovery>
+
 ### Phase 1: DISCOVERY [1/8]
 
 Display: `[1/8] DISCOVERY - Creating Product Requirements Document...`
@@ -75,11 +78,13 @@ Display: `[1/8] DISCOVERY - Creating Product Requirements Document...`
 **Create PRD at `grimoires/loa/prd.md`** following standard PRD structure.
 
 **Artifact completion detection:**
+
 - File exists: `test -f grimoires/loa/prd.md`
 - Size check: File > 500 bytes
 - Header validation: Contains "Product Requirements Document" or "PRD"
 
 Once complete:
+
 ```bash
 .claude/scripts/simstim-orchestrator.sh --update-phase discovery completed
 .claude/scripts/simstim-state.sh add-artifact prd grimoires/loa/prd.md
@@ -91,6 +96,7 @@ Proceed to Phase 2.
 ---
 
 <phase_2_flatline_prd>
+
 ### Phase 2: FLATLINE PRD REVIEW [2/8]
 
 Display: `[2/8] FLATLINE PRD - Multi-model adversarial review...`
@@ -98,6 +104,7 @@ Display: `[2/8] FLATLINE PRD - Multi-model adversarial review...`
 **Update state**: `simstim-orchestrator.sh --update-phase flatline_prd in_progress`
 
 1. Run Flatline Protocol:
+
    ```bash
    result=$(.claude/scripts/flatline-orchestrator.sh --doc grimoires/loa/prd.md --phase prd --mode hitl --json)
    ```
@@ -109,6 +116,7 @@ Display: `[2/8] FLATLINE PRD - Multi-model adversarial review...`
    - **LOW_VALUE** (both <400): Skip silently
 
 3. For each DISPUTED item, ask user:
+
    ```
    DISPUTED: [suggestion]
    GPT scored [X], Opus scored [Y]
@@ -116,6 +124,7 @@ Display: `[2/8] FLATLINE PRD - Multi-model adversarial review...`
    ```
 
 4. For each BLOCKER item, ask user:
+
    ```
    BLOCKER: [concern]
    Severity: [score]
@@ -148,6 +157,7 @@ Proceed to Phase 3.
 ---
 
 <phase_3_architecture>
+
 ### Phase 3: ARCHITECTURE [3/8]
 
 Display: `[3/8] ARCHITECTURE - Creating Software Design Document...`
@@ -167,11 +177,13 @@ Display: `[3/8] ARCHITECTURE - Creating Software Design Document...`
 **Create SDD at `grimoires/loa/sdd.md`** following standard SDD structure.
 
 **Artifact completion detection:**
+
 - File exists: `test -f grimoires/loa/sdd.md`
 - Size check: File > 500 bytes
 - Header validation: Contains "Software Design Document" or "SDD"
 
 Once complete:
+
 ```bash
 .claude/scripts/simstim-orchestrator.sh --update-phase architecture completed
 .claude/scripts/simstim-state.sh add-artifact sdd grimoires/loa/sdd.md
@@ -183,6 +195,7 @@ Proceed to Phase 4.
 ---
 
 <phase_4_flatline_sdd>
+
 ### Phase 4: FLATLINE SDD REVIEW [4/8]
 
 Display: `[4/8] FLATLINE SDD - Multi-model adversarial review...`
@@ -190,6 +203,7 @@ Display: `[4/8] FLATLINE SDD - Multi-model adversarial review...`
 **Update state**: `simstim-orchestrator.sh --update-phase flatline_sdd in_progress`
 
 Follow same HITL process as Phase 2, but for SDD:
+
 ```bash
 result=$(.claude/scripts/flatline-orchestrator.sh --doc grimoires/loa/sdd.md --phase sdd --mode hitl --json)
 ```
@@ -197,6 +211,7 @@ result=$(.claude/scripts/flatline-orchestrator.sh --doc grimoires/loa/sdd.md --p
 Process HIGH_CONSENSUS, DISPUTED, BLOCKER items as in Phase 2.
 
 Update state:
+
 ```bash
 .claude/scripts/simstim-orchestrator.sh --update-flatline-metrics sdd [integrated] [disputed] [blockers]
 .claude/scripts/simstim-orchestrator.sh --update-phase flatline_sdd completed
@@ -208,6 +223,7 @@ Proceed to Phase 5.
 ---
 
 <phase_5_planning>
+
 ### Phase 5: PLANNING [5/8]
 
 Display: `[5/8] PLANNING - Creating Sprint Plan...`
@@ -226,11 +242,13 @@ Display: `[5/8] PLANNING - Creating Sprint Plan...`
 **Create sprint plan at `grimoires/loa/sprint.md`** following standard format.
 
 **Artifact completion detection:**
+
 - File exists: `test -f grimoires/loa/sprint.md`
 - Size check: File > 500 bytes
 - Header validation: Contains "Sprint Plan"
 
 Once complete:
+
 ```bash
 .claude/scripts/simstim-orchestrator.sh --update-phase planning completed
 .claude/scripts/simstim-state.sh add-artifact sprint grimoires/loa/sprint.md
@@ -242,6 +260,7 @@ Proceed to Phase 6.
 ---
 
 <phase_6_flatline_sprint>
+
 ### Phase 6: FLATLINE SPRINT REVIEW [6/8]
 
 Display: `[6/8] FLATLINE SPRINT - Multi-model adversarial review...`
@@ -249,6 +268,7 @@ Display: `[6/8] FLATLINE SPRINT - Multi-model adversarial review...`
 **Update state**: `simstim-orchestrator.sh --update-phase flatline_sprint in_progress`
 
 Follow same HITL process as Phase 2, but for sprint plan:
+
 ```bash
 result=$(.claude/scripts/flatline-orchestrator.sh --doc grimoires/loa/sprint.md --phase sprint --mode hitl --json)
 ```
@@ -256,6 +276,7 @@ result=$(.claude/scripts/flatline-orchestrator.sh --doc grimoires/loa/sprint.md 
 Process HIGH_CONSENSUS, DISPUTED, BLOCKER items as in Phase 2.
 
 Update state:
+
 ```bash
 .claude/scripts/simstim-orchestrator.sh --update-flatline-metrics sprint [integrated] [disputed] [blockers]
 .claude/scripts/simstim-orchestrator.sh --update-phase flatline_sprint completed
@@ -267,6 +288,7 @@ Proceed to Phase 7.
 ---
 
 <phase_7_implementation>
+
 ### Phase 7: IMPLEMENTATION [7/8]
 
 Display: `[7/8] IMPLEMENTATION - Handing off to autonomous execution...`
@@ -278,6 +300,7 @@ Display: `[7/8] IMPLEMENTATION - Handing off to autonomous execution...`
 This phase delegates to the run-mode skill for autonomous implementation.
 
 1. Inform user:
+
    ```
    Ready to begin autonomous implementation.
    This will execute all sprints and create a draft PR.
@@ -285,33 +308,127 @@ This phase delegates to the run-mode skill for autonomous implementation.
    Continue? [Y/n]
    ```
 
-2. Invoke /run sprint-plan:
+2. **Set plan_id reference** (v1.28.0):
+
+   ```bash
+   .claude/scripts/simstim-orchestrator.sh --set-expected-plan-id
+   ```
+
+   This stores the expected plan_id for state correlation after run-mode completes.
+
+3. Invoke /run sprint-plan:
    - Run-mode takes over the conversation
-   - Creates its own state at `.run/state.json`
+   - Creates its own state at `.run/sprint-plan-state.json`
    - Implements all sprints autonomously
    - Creates draft PR when complete
 
-3. After run-mode completes, check result:
-   - Read `.run/state.json` for final state
-   - If state = "JACKED_OUT": Implementation complete
-   - If state = "HALTED": Mark as "incomplete", inform user of `/run-resume`
+4. **Sync run-mode state** (v1.28.0):
 
-4. Update simstim state:
+   ```bash
+   sync_result=$(.claude/scripts/simstim-orchestrator.sh --sync-run-mode)
+   ```
+
+   This synchronizes run-mode completion state back to simstim state atomically.
+
+   **Check sync result**:
+   - If `synced: true`: State successfully synchronized
+   - If `synced: false, reason: plan_id_mismatch`: Stale run-mode state detected, do NOT proceed
+   - If `synced: false, reason: stale_timestamp`: Run-mode state too old, do NOT proceed
+   - If `synced: false, reason: no_run_mode_state`: Run-mode didn't complete, check manually
+
+5. Check synchronized state:
+   - If simstim state = "COMPLETED": Implementation complete (no post-PR validation)
+   - If simstim state = "AWAITING_HITL": Post-PR validation complete, proceed to Phase 8
+   - If simstim state = "HALTED": Mark as "incomplete", inform user of `/run-resume`
+   - If simstim state = "SYNC_FAILED": Sync failed after max attempts, use `--force-phase` to bypass
+
+6. Update simstim state (if sync didn't already):
    ```bash
    .claude/scripts/simstim-orchestrator.sh --update-phase implementation [completed|incomplete]
    ```
 
-Proceed to Phase 8.
+**Recovery: Force Phase** (v1.28.0):
+
+If sync fails repeatedly (after 3 attempts), use the escape hatch:
+
+```bash
+.claude/scripts/simstim-orchestrator.sh --force-phase complete --yes
+```
+
+⚠️ WARNING: This bypasses validation. Only use as last resort when you've verified implementation is actually complete.
+
+Proceed to Phase 7.5 (if post-PR validation ran) or Phase 8.
 </phase_7_implementation>
 
 ---
 
+<phase_7_5_post_pr_validation>
+
+### Phase 7.5: POST-PR VALIDATION [7.5/8] (v1.25.0)
+
+Display: `[7.5/8] POST-PR VALIDATION - Fresh-eyes review...`
+
+**This phase runs automatically via post-pr-orchestrator.sh when `post_pr_validation.enabled: true`.**
+
+The post-PR validation loop includes:
+
+1. **POST_PR_AUDIT**: Consolidated audit on PR changes
+   - Auto-fixable issues enter fix loop (max 5 iterations)
+   - Circuit breaker: same finding 3x = escalate
+   - Creates `.PR-AUDITED` marker
+
+2. **CONTEXT_CLEAR**: Checkpoint and fresh context
+   - Saves checkpoint to NOTES.md Session Continuity
+   - Logs to trajectory JSONL
+   - Displays instructions:
+     ```
+     To continue with fresh-eyes E2E testing:
+       1. Run: /clear
+       2. Run: /simstim --resume
+     ```
+
+3. **E2E_TESTING**: Fresh-eyes testing
+   - Runs build and tests with clean context
+   - Fix loop for failures (max 3 iterations)
+   - Circuit breaker: same failure 2x = escalate
+   - Creates `.PR-E2E-PASSED` marker
+
+4. **FLATLINE_PR** (optional): Multi-model PR review
+   - Runs if `flatline_review.enabled: true`
+   - Cost: ~$1.50
+   - Uses HITL mode (blockers prompt user, not auto-halt)
+   - Creates `.PR-VALIDATED` marker
+
+**Resume from context clear:**
+
+When user runs `/simstim --resume` after context clear:
+
+```bash
+# Check post-PR state
+current_phase=$(post-pr-state.sh get state)
+if [[ "$current_phase" == "CONTEXT_CLEAR" ]]; then
+  # Continue from E2E_TESTING
+  post-pr-orchestrator.sh --resume --pr-url "$PR_URL"
+fi
+```
+
+**Final states:**
+
+- `READY_FOR_HITL`: All validations passed, PR ready for human review
+- `HALTED`: Validation failed, check `halt_reason` field
+
+</phase_7_5_post_pr_validation>
+
+---
+
 <phase_complete>
+
 ### Phase 8: COMPLETE [8/8]
 
 Display: `[8/8] COMPLETE - Workflow finished!`
 
 1. Generate Flatline summary:
+
    ```
    Flatline Summary:
    - PRD: [N] integrated, [M] disputed, [K] blockers
@@ -323,11 +440,13 @@ Display: `[8/8] COMPLETE - Workflow finished!`
 2. Display PR URL from run-mode (if available)
 
 3. Update final state:
+
    ```bash
    .claude/scripts/simstim-orchestrator.sh --complete
    ```
 
 4. Display completion message:
+
    ```
    Simstim workflow complete!
 
@@ -340,19 +459,22 @@ Display: `[8/8] COMPLETE - Workflow finished!`
 
    Use /simstim --abort to clean up state file.
    ```
-</phase_complete>
+
+   </phase_complete>
 
 ---
 
 ## Error Handling
 
 <error_handling>
+
 ### On Skill/Phase Failure
 
 If any phase fails unexpectedly:
 
 1. Log error to trajectory
 2. Present options to user:
+
    ```
    Phase [X] encountered an error: [message]
 
@@ -371,6 +493,7 @@ If any phase fails unexpectedly:
 ### On Flatline Timeout
 
 If Flatline API times out (>120s):
+
 1. Log warning to trajectory
 2. Mark flatline phase as "skipped"
 3. Continue to next planning phase
@@ -379,21 +502,24 @@ If Flatline API times out (>120s):
 ### On Interrupt (Ctrl+C)
 
 The orchestrator script traps SIGINT:
+
 1. Save current state immediately
 2. Mark workflow as "interrupted"
 3. Display: "Workflow interrupted. Run /simstim --resume to continue."
-</error_handling>
+   </error_handling>
 
 ---
 
 ## Resume Support
 
 <resume_support>
+
 ### Resuming from Interruption
 
 When `--resume` flag is provided:
 
 **Step 1: Validate State File Exists**
+
 ```bash
 if [[ ! -f .run/simstim-state.json ]]; then
     error "No state file found. Cannot resume."
@@ -403,12 +529,15 @@ fi
 ```
 
 **Step 2: Check Schema Version**
+
 ```bash
 .claude/scripts/simstim-state.sh check-version
 ```
+
 If version mismatch, migration is attempted automatically.
 
 **Step 3: Load State and Determine Resume Point**
+
 ```bash
 # Get current state
 state=$(.claude/scripts/simstim-state.sh get state)
@@ -419,6 +548,7 @@ incomplete_phase=$(jq -r '.phases | to_entries | map(select(.value == "in_progre
 ```
 
 **Step 4: Validate Artifact Checksums**
+
 ```bash
 drift=$(.claude/scripts/simstim-state.sh validate-artifacts)
 valid=$(echo "$drift" | jq -r '.valid')
@@ -428,6 +558,7 @@ valid=$(echo "$drift" | jq -r '.valid')
 If drift detected (`valid == false`), present options to user:
 
 For each modified artifact:
+
 ```
 ⚠️ Artifact drift detected:
 
@@ -443,11 +574,13 @@ This file was modified since the last session.
 ```
 
 User choices:
+
 - **Re-review**: Roll back to the Flatline review phase for that artifact
 - **Continue**: Update stored checksum, proceed from current phase
 - **Abort**: Exit immediately, state preserved
 
 **Step 6: Display Resume Summary**
+
 ```
 ════════════════════════════════════════════════════════════
      Resuming Simstim Workflow
@@ -470,6 +603,7 @@ Resuming from: FLATLINE SDD
 
 **Step 7: Jump to Resume Phase**
 Based on `incomplete_phase`, jump to the appropriate phase section:
+
 - `discovery` → Phase 1
 - `flatline_prd` → Phase 2
 - `architecture` → Phase 3
@@ -515,27 +649,57 @@ When run-mode encounters a circuit breaker scenario (max cycles, timeout, etc.):
 ```
 
 On resume:
+
 1. Check if implementation phase is `incomplete`
 2. Inform user: "Previous implementation attempt incomplete. Continuing..."
 3. Invoke `/run-resume` instead of fresh `/run sprint-plan`
-</resume_support>
+
+### Handling State Sync Issues (v1.28.0)
+
+When state sync fails (plan_id mismatch, stale timestamp, etc.):
+
+**Automatic Detection on Resume:**
+The preflight phase automatically detects when implementation completed but simstim state wasn't updated (e.g., due to context compaction). It validates:
+
+- Plan ID correlation between simstim and run-mode state
+- Timestamp staleness (rejects state older than 24 hours)
+- Run-mode terminal state (JACKED_OUT, READY_FOR_HITL, HALTED)
+
+**SYNC_FAILED State:**
+After 3 failed sync attempts, simstim enters SYNC_FAILED state. Recovery options:
+
+1. **Investigate**: Check `.run/sprint-plan-state.json` manually
+2. **Force bypass**: Use escape hatch if implementation is verified complete:
+   ```bash
+   .claude/scripts/simstim-orchestrator.sh --force-phase complete --yes
+   ```
+   ⚠️ WARNING: Only use after manually verifying implementation is complete
+
+**AWAITING_HITL State:**
+When run-mode returns READY_FOR_HITL (post-PR validation requested human review):
+
+1. Simstim state is set to AWAITING_HITL
+2. Phase 8 displays PR URL and prompts for HITL review
+3. After review, workflow completes normally
+   </resume_support>
 
 ---
 
 ## Flags Reference
 
-| Flag | Description | Mutual Exclusivity |
-|------|-------------|-------------------|
-| `--from <phase>` | Start from specific phase (plan-and-analyze, architect, sprint-plan, run) | Cannot use with --resume |
-| `--resume` | Continue from interruption | Cannot use with --from |
-| `--abort` | Clean up state and exit | Takes precedence over others |
-| `--dry-run` | Show planned phases without executing | Can combine with any |
+| Flag             | Description                                                               | Mutual Exclusivity           |
+| ---------------- | ------------------------------------------------------------------------- | ---------------------------- |
+| `--from <phase>` | Start from specific phase (plan-and-analyze, architect, sprint-plan, run) | Cannot use with --resume     |
+| `--resume`       | Continue from interruption                                                | Cannot use with --from       |
+| `--abort`        | Clean up state and exit                                                   | Takes precedence over others |
+| `--dry-run`      | Show planned phases without executing                                     | Can combine with any         |
 
 ---
 
 ## Configuration
 
 Requires in `.loa.config.yaml`:
+
 ```yaml
 simstim:
   enabled: true

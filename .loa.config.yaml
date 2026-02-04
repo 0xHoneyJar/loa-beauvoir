@@ -532,19 +532,19 @@ compound_learning:
 
     # ck integration for code patterns
     ck:
-      enabled: auto  # auto | true | false
+      enabled: auto # auto | true | false
       threshold: 0.7
 
     # Memory Stack integration for text embeddings
     memory_stack:
-      enabled: auto  # auto | true | false
+      enabled: auto # auto | true | false
       model: all-MiniLM-L6-v2
       threshold: 0.35
 
     # qmd integration for grimoire search
     qmd:
-      enabled: auto  # auto | true | false
-      search_mode: hybrid  # hybrid | semantic | keyword
+      enabled: auto # auto | true | false
+      search_mode: hybrid # hybrid | semantic | keyword
 
     # Fallback settings (when semantic tools unavailable)
     fallback:
@@ -587,7 +587,7 @@ compound_learning:
       weight: 1.0
     # Verification: Was solution verified to work?
     verification:
-      min_score: 3  # Lower bar for verification
+      min_score: 3 # Lower bar for verification
       weight: 0.8
 
   # -------------------------------------------------------------------------
@@ -604,9 +604,9 @@ compound_learning:
       user_negative: -5
     # Effectiveness tier thresholds
     tiers:
-      high: 80      # Score >= 80: increase retrieval priority
-      medium: 50    # Score >= 50: normal
-      low: 20       # Score >= 20: flag for review
+      high: 80 # Score >= 80: increase retrieval priority
+      medium: 50 # Score >= 50: normal
+      low: 20 # Score >= 20: flag for review
       # Score < 20: ineffective, queue for pruning
     # Pruning settings
     pruning:
@@ -654,7 +654,7 @@ compound_learning:
     # Enable Mermaid diagram generation
     enabled: true
     # Output format
-    format: mermaid  # mermaid | ascii | both
+    format: mermaid # mermaid | ascii | both
     # Output directory for diagrams
     output_dir: grimoires/loa/diagrams/
     # Include diagrams in compound reports
@@ -663,10 +663,10 @@ compound_learning:
     include_preview_urls: true
     # Color scheme for effectiveness levels
     color_scheme:
-      high_effectiveness: "#10b981"   # green
+      high_effectiveness: "#10b981" # green
       medium_effectiveness: "#fbbf24" # amber
-      low_effectiveness: "#f4f4f5"    # gray
-      current_focus: "#3b82f6"        # blue
+      low_effectiveness: "#f4f4f5" # gray
+      current_focus: "#3b82f6" # blue
 
   # -------------------------------------------------------------------------
   # Archive Management (PRD FR-9)
@@ -714,9 +714,9 @@ run_mode:
     # Default branch name for multi-sprint execution
     default_branch_name: "release"
     # Compound learning hook on sprint-plan completion (Task 8.8-8.9)
-    compound_on_complete: true     # Trigger compound review after all sprints
-    compound_auto_approve: false   # Auto-approve extracted skills
-    compound_fail_action: warn     # warn | fail - what to do if compound fails
+    compound_on_complete: true # Trigger compound review after all sprints
+    compound_auto_approve: false # Auto-approve extracted skills
+    compound_fail_action: warn # warn | fail - what to do if compound fails
 
 # =============================================================================
 # Recursive JIT Context System (v0.20.0)
@@ -901,9 +901,9 @@ oracle:
   # -------------------------------------------------------------------------
   # Results are ranked by weighted_score = match_score * source_weight
   weights:
-    loa: 1.0         # Highest priority - Loa's own proven patterns
-    anthropic: 0.8   # Authoritative - Anthropic official documentation
-    community: 0.5   # Useful but less verified community contributions
+    loa: 1.0 # Highest priority - Loa's own proven patterns
+    anthropic: 0.8 # Authoritative - Anthropic official documentation
+    community: 0.5 # Useful but less verified community contributions
 
   # -------------------------------------------------------------------------
   # Loa Source Configuration
@@ -1192,7 +1192,7 @@ feedback:
     framework: "0xHoneyJar/loa"
     constructs: "0xHoneyJar/loa-constructs"
     forge: "0xHoneyJar/forge"
-    project: "${GITHUB_REPOSITORY}"  # Current repo
+    project: "${GITHUB_REPOSITORY}" # Current repo
 
   # Label configuration
   labels:
@@ -1202,6 +1202,23 @@ feedback:
     default:
       - "feedback"
       - "user-report"
+
+  # -------------------------------------------------------------------------
+  # Trace-Based Routing (v1.28.0 - Issue #171)
+  # -------------------------------------------------------------------------
+  # Analyze execution trajectory to automatically route feedback to the
+  # appropriate skill or construct based on recent activity.
+  trace_routing:
+    # Master toggle - disabled by default for staged rollout
+    enabled: false
+    # Minimum confidence (0-100) to use trace-based routing
+    confidence_threshold: 70
+    # Hours of trajectory history to analyze
+    time_window_hours: 24
+    # Health check timeout in milliseconds
+    health_check_timeout_ms: 100
+    # Full analysis timeout in seconds
+    analysis_timeout_seconds: 5
 
 # =============================================================================
 # Update-Loa Branch Testing (v1.11.0 - Issue #91)
@@ -1312,26 +1329,26 @@ context_editing:
 
   # What to clear (priority order, lowest priority cleared first)
   clear_targets:
-    - stale_tool_results        # Old tool call results
-    - completed_phase_details   # Details from finished phases
-    - superseded_file_reads     # Files that were re-read with newer content
-    - intermediate_outputs      # Temporary/intermediate results
-    - verbose_debug             # Debug logs and verbose output
+    - stale_tool_results # Old tool call results
+    - completed_phase_details # Details from finished phases
+    - superseded_file_reads # Files that were re-read with newer content
+    - intermediate_outputs # Temporary/intermediate results
+    - verbose_debug # Debug logs and verbose output
 
   # Phase-based clearing triggers
   # Clear after these phases complete (for autonomous agent)
   clear_after_phases:
-    - initialization    # Phase 1: After init complete
-    - implementation    # Phase 5: After code written
-    - testing           # Phase 6: After tests pass
+    - initialization # Phase 1: After init complete
+    - implementation # Phase 5: After code written
+    - testing # Phase 6: After tests pass
 
   # Artifacts to always preserve (never clear)
   preserve_artifacts:
-    - trajectory_events         # Audit trail
-    - quality_gate_results      # Gate decisions
-    - decision_records          # Architecture decisions
-    - notes_session_continuity  # Recovery anchor
-    - active_beads              # Current task state
+    - trajectory_events # Audit trail
+    - quality_gate_results # Gate decisions
+    - decision_records # Architecture decisions
+    - notes_session_continuity # Recovery anchor
+    - active_beads # Current task state
 
   # Runtime integration signals
   # These are hints for runtime implementations
@@ -1415,15 +1432,15 @@ memory_schema:
     decision:
       ttl: permanent
       confidence_required: 0.9
-      storage_file: decisions.yaml  # Already exists, formalize it
+      storage_file: decisions.yaml # Already exists, formalize it
     # Extracted patterns from experience
     learning:
-      ttl: 90d  # Learnings can become stale
+      ttl: 90d # Learnings can become stale
       confidence_required: 0.7
       storage_file: learnings.yaml
     # Error-solution pairs for debugging
     error:
-      ttl: 30d  # Errors are context-specific
+      ttl: 30d # Errors are context-specific
       confidence_required: 0.6
       storage_file: errors.yaml
     # User/project preferences
@@ -1494,8 +1511,8 @@ prompt_enhancement:
     enabled: false
     # Skills to exclude from middleware enhancement
     exclude_skills:
-      - "enhancing-prompts"  # Prevent recursion
-      - "run-mode"           # Don't enhance autonomous mode
+      - "enhancing-prompts" # Prevent recursion
+      - "run-mode" # Don't enhance autonomous mode
 
 # =============================================================================
 # Flatline Protocol (v1.17.0 - Issue #29)
@@ -1576,3 +1593,20 @@ preferences:
   auto_bead_on_review: true
   require_security_audit: true
   confirm_app_writes: true
+
+# =============================================================================
+# Simstim HITL Workflow (v1.24.0)
+# =============================================================================
+# Human-in-the-loop accelerated development with Flatline integration
+simstim:
+  enabled: true
+  flatline:
+    auto_accept_high_consensus: true
+    show_disputed: true
+    show_blockers: true
+    phases:
+      - prd
+      - sdd
+      - sprint
+  defaults:
+    timeout_hours: 24

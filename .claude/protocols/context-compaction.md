@@ -13,25 +13,43 @@ Define rules and behavior for client-side context compaction in Claude Code. Ens
 
 These items must survive any compaction event:
 
-| Item | Rationale |
-|------|-----------|
-| `NOTES.md` Session Continuity | Recovery anchor for new sessions |
-| `NOTES.md` Decision Log | Audit trail, reasoning persistence |
-| Trajectory entries | External files, already lossless |
-| Active bead references | Task continuity |
-| Sprint context | Current work state |
+| Item                          | Rationale                                                       |
+| ----------------------------- | --------------------------------------------------------------- |
+| `NOTES.md` Session Continuity | Recovery anchor for new sessions                                |
+| `NOTES.md` Decision Log       | Audit trail, reasoning persistence                              |
+| Trajectory entries            | External files, already lossless                                |
+| Active bead references        | Task continuity                                                 |
+| Sprint context                | Current work state                                              |
+| **Run mode state** (v1.27.0)  | `.run/sprint-plan-state.json` - autonomous execution continuity |
+
+### Run Mode State Recovery (v1.27.0)
+
+**CRITICAL**: After compaction, ALWAYS check for active run mode:
+
+```bash
+if [[ -f .run/sprint-plan-state.json ]]; then
+  state=$(jq -r '.state' .run/sprint-plan-state.json)
+  if [[ "$state" == "RUNNING" ]]; then
+    # Resume autonomous execution - DO NOT prompt for confirmation
+    current=$(jq -r '.sprints.current' .run/sprint-plan-state.json)
+    # Continue sprint loop from $current
+  fi
+fi
+```
+
+If `state=RUNNING`, the agent MUST resume autonomous sprint execution without user confirmation. This enables overnight/unattended runs to survive context compaction.
 
 ### COMPACTABLE
 
 These items can be summarized or removed after use:
 
-| Item | When Compactable | Replacement |
-|------|------------------|-------------|
-| Tool results | After processing | Summary/path reference |
-| Thinking blocks | After trajectory logging | Trajectory entry reference |
-| Verbose debug output | After problem resolution | Brief status |
-| Redundant file reads | After first extraction | Path + line refs |
-| Intermediate outputs | After final synthesis | Result only |
+| Item                 | When Compactable         | Replacement                |
+| -------------------- | ------------------------ | -------------------------- |
+| Tool results         | After processing         | Summary/path reference     |
+| Thinking blocks      | After trajectory logging | Trajectory entry reference |
+| Verbose debug output | After problem resolution | Brief status               |
+| Redundant file reads | After first extraction   | Path + line refs           |
+| Intermediate outputs | After final synthesis    | Result only                |
 
 ## Compaction Triggers
 
@@ -109,10 +127,10 @@ context-manager.sh recover 3
 ```yaml
 # .loa.config.yaml
 context_management:
-  client_compaction: true          # Enable/disable compaction
-  preserve_notes_md: true          # Always preserve NOTES.md
-  simplified_checkpoint: true      # Use 3-step checkpoint
-  auto_trajectory_log: true        # Auto-log thinking blocks
+  client_compaction: true # Enable/disable compaction
+  preserve_notes_md: true # Always preserve NOTES.md
+  simplified_checkpoint: true # Use 3-step checkpoint
+  auto_trajectory_log: true # Auto-log thinking blocks
 
   # Preservation rules (customizable)
   preservation_rules:
@@ -180,12 +198,12 @@ If recovery fails after compaction:
 
 Track compaction efficiency:
 
-| Metric | Target |
-|--------|--------|
-| Pre-compaction size | Baseline |
-| Post-compaction size | <50% of pre |
-| Recovery success rate | 100% |
-| Critical section preservation | 100% |
+| Metric                        | Target      |
+| ----------------------------- | ----------- |
+| Pre-compaction size           | Baseline    |
+| Post-compaction size          | <50% of pre |
+| Recovery success rate         | 100%        |
+| Critical section preservation | 100%        |
 
 ## Related Protocols
 

@@ -1,4 +1,5 @@
 <input_guardrails>
+
 ## Pre-Execution Validation
 
 Before main skill execution, perform guardrail checks.
@@ -6,6 +7,7 @@ Before main skill execution, perform guardrail checks.
 ### Step 1: Check Configuration
 
 Read `.loa.config.yaml`:
+
 ```yaml
 guardrails:
   input:
@@ -13,6 +15,7 @@ guardrails:
 ```
 
 **Exit Conditions**:
+
 - `guardrails.input.enabled: false` → Skip to skill execution
 - Environment `LOA_GUARDRAILS_ENABLED=false` → Skip to skill execution
 
@@ -22,10 +25,10 @@ guardrails:
 
 **CRITICAL**: This is a **high** danger level skill (autonomous execution).
 
-| Mode | Behavior |
-|------|----------|
-| Interactive | Require explicit confirmation |
-| Autonomous | Not applicable (run-mode IS autonomous mode) |
+| Mode        | Behavior                                     |
+| ----------- | -------------------------------------------- |
+| Interactive | Require explicit confirmation                |
+| Autonomous  | Not applicable (run-mode IS autonomous mode) |
 
 ### Step 3: Check Danger Levels for Invoked Skills
 
@@ -35,13 +38,14 @@ Before each skill invocation in the run loop:
 danger-level-enforcer.sh --skill $SKILL --mode autonomous
 ```
 
-| Result | Behavior |
-|--------|----------|
-| PROCEED | Execute skill |
-| WARN | Execute with enhanced logging |
-| BLOCK | Skip skill, log to trajectory |
+| Result  | Behavior                      |
+| ------- | ----------------------------- |
+| PROCEED | Execute skill                 |
+| WARN    | Execute with enhanced logging |
+| BLOCK   | Skip skill, log to trajectory |
 
 **Override**: Use `--allow-high` flag to allow high-risk skills:
+
 ```bash
 /run sprint-1 --allow-high
 ```
@@ -74,11 +78,13 @@ You are an autonomous implementation agent. You execute sprint implementations i
 ## Core Behavior
 
 **State Machine:**
+
 ```
 READY → JACK_IN → RUNNING → COMPLETE/HALTED → JACKED_OUT
 ```
 
 **Execution Loop (Single Sprint):**
+
 ```
 while circuit_breaker.state == CLOSED:
   1. /implement target
@@ -90,10 +96,35 @@ while circuit_breaker.state == CLOSED:
   7. If COMPLETED → break
 
 Create draft PR
-Update state to JACKED_OUT
+Invoke Post-PR Validation (if enabled)
+Update state to READY_FOR_HITL or JACKED_OUT
 ```
 
+**Post-PR Validation (v1.25.0):**
+
+After PR creation, check `post_pr_validation.enabled` in `.loa.config.yaml`:
+
+```
+if post_pr_validation.enabled:
+  1. Invoke: post-pr-orchestrator.sh --pr-url <url> --mode autonomous
+  2. On SUCCESS (exit 0) → state = READY_FOR_HITL
+  3. On HALTED (exit 2-5) → state = HALTED, create [INCOMPLETE] PR note
+else:
+  state = JACKED_OUT
+```
+
+The post-PR validation loop runs:
+
+- **POST_PR_AUDIT**: Consolidated PR audit with fix loop
+- **CONTEXT_CLEAR**: Save checkpoint, prompt user to /clear
+- **E2E_TESTING**: Fresh-eyes testing with fix loop
+- **FLATLINE_PR**: Optional multi-model review (~$1.50)
+- **READY_FOR_HITL**: All validations complete
+
+See `grimoires/loa/prd-post-pr-validation.md` for full specification.
+
 **Sprint Plan Execution Loop (`/run sprint-plan`):**
+
 ```
 discover_sprints()  # From sprint.md, ledger.json, or a2a directories
 filter_sprints(--from, --to)
@@ -114,10 +145,12 @@ Create SINGLE consolidated draft PR with all sprints
   - Summary table showing per-sprint breakdown
   - Commits grouped by sprint
   - Deleted files section
-Update state to JACKED_OUT
+Invoke Post-PR Validation (if enabled)
+Update state to READY_FOR_HITL or JACKED_OUT
 ```
 
 **Consolidated PR (Default - v1.15.1):**
+
 - All sprints work on the same branch
 - Single PR created after ALL sprints complete
 - PR includes per-sprint breakdown table
@@ -137,14 +170,15 @@ Before any execution:
 
 Four triggers that halt execution:
 
-| Trigger | Default Threshold | Description |
-|---------|-------------------|-------------|
-| Same Issue | 3 | Same finding hash repeated |
-| No Progress | 5 | Cycles without file changes |
-| Cycle Limit | 20 | Maximum total cycles |
-| Timeout | 8 hours | Maximum runtime |
+| Trigger     | Default Threshold | Description                 |
+| ----------- | ----------------- | --------------------------- |
+| Same Issue  | 3                 | Same finding hash repeated  |
+| No Progress | 5                 | Cycles without file changes |
+| Cycle Limit | 20                | Maximum total cycles        |
+| Timeout     | 8 hours           | Maximum runtime             |
 
 When tripped:
+
 - State changes to HALTED
 - Circuit breaker state changes to OPEN
 - Work is committed and pushed
@@ -160,6 +194,7 @@ All git operations MUST go through ICE wrapper:
 ```
 
 ICE enforces:
+
 - **Never push to protected branches** (main, master, staging, etc.)
 - **Never merge** (merge is blocked entirely)
 - **Never delete branches** (deletion is blocked)
@@ -169,13 +204,13 @@ ICE enforces:
 
 All state in `.run/` directory:
 
-| File | Purpose |
-|------|---------|
-| `state.json` | Run progress, metrics, options |
+| File                     | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `state.json`             | Run progress, metrics, options                |
 | `sprint-plan-state.json` | Sprint plan progress (for `/run sprint-plan`) |
-| `circuit-breaker.json` | Trigger counts, history |
-| `deleted-files.log` | Tracked deletions for PR |
-| `rate-limit.json` | API call tracking |
+| `circuit-breaker.json`   | Trigger counts, history                       |
+| `deleted-files.log`      | Tracked deletions for PR                      |
+| `rate-limit.json`        | API call tracking                             |
 
 ### Sprint Plan State (`sprint-plan-state.json`)
 
@@ -191,10 +226,10 @@ When running `/run sprint-plan`, track multi-sprint progress:
     "completed": 2,
     "current": "sprint-3",
     "list": [
-      {"id": "sprint-1", "status": "completed", "cycles": 2},
-      {"id": "sprint-2", "status": "completed", "cycles": 3},
-      {"id": "sprint-3", "status": "in_progress", "cycles": 1},
-      {"id": "sprint-4", "status": "pending"}
+      { "id": "sprint-1", "status": "completed", "cycles": 2 },
+      { "id": "sprint-2", "status": "completed", "cycles": 3 },
+      { "id": "sprint-3", "status": "in_progress", "cycles": 1 },
+      { "id": "sprint-4", "status": "pending" }
     ]
   },
   "options": {
@@ -302,6 +337,7 @@ src/legacy/
 4. **Visibility**: Draft PRs, deleted file tracking, metrics
 
 **Human in the Loop:**
+
 - Shifted from phase checkpoints to PR review
 - All work visible in draft PR
 - Deleted files prominently displayed
@@ -328,6 +364,7 @@ run_mode:
 ## Error Recovery
 
 On any error:
+
 1. State preserved in `.run/`
 2. Use `/run-status` to see current state
 3. Use `/run-resume` to continue

@@ -1,4 +1,4 @@
-<!-- @loa-managed: true | version: 1.22.0 | hash: PLACEHOLDER -->
+<!-- @loa-managed: true | version: 1.27.0 | hash: PLACEHOLDER -->
 <!-- WARNING: This file is managed by the Loa Framework. Do not edit directly. -->
 
 # Loa Framework Instructions
@@ -7,34 +7,34 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 
 ## Reference Files
 
-| Topic | Location |
-|-------|----------|
-| Configuration | `.loa.config.yaml.example` |
+| Topic          | Location                                       |
+| -------------- | ---------------------------------------------- |
+| Configuration  | `.loa.config.yaml.example`                     |
 | Context/Memory | `.claude/loa/reference/context-engineering.md` |
-| Protocols | `.claude/loa/reference/protocols-summary.md` |
-| Scripts | `.claude/loa/reference/scripts-reference.md` |
+| Protocols      | `.claude/loa/reference/protocols-summary.md`   |
+| Scripts        | `.claude/loa/reference/scripts-reference.md`   |
 
 ## Three-Zone Model
 
-| Zone | Path | Permission |
-|------|------|------------|
-| System | `.claude/` | NEVER edit |
-| State | `grimoires/`, `.beads/` | Read/Write |
-| App | `src/`, `lib/`, `app/` | Confirm writes |
+| Zone   | Path                    | Permission     |
+| ------ | ----------------------- | -------------- |
+| System | `.claude/`              | NEVER edit     |
+| State  | `grimoires/`, `.beads/` | Read/Write     |
+| App    | `src/`, `lib/`, `app/`  | Confirm writes |
 
 **Critical**: Never edit `.claude/` - use `.claude/overrides/` or `.loa.config.yaml`.
 
 ## Workflow
 
-| Phase | Command | Output |
-|-------|---------|--------|
-| 1 | `/plan-and-analyze` | PRD |
-| 2 | `/architect` | SDD |
-| 3 | `/sprint-plan` | Sprint Plan |
-| 4 | `/implement sprint-N` | Code |
-| 5 | `/review-sprint sprint-N` | Feedback |
-| 5.5 | `/audit-sprint sprint-N` | Approval |
-| 6 | `/deploy-production` | Infrastructure |
+| Phase | Command                   | Output         |
+| ----- | ------------------------- | -------------- |
+| 1     | `/plan-and-analyze`       | PRD            |
+| 2     | `/architect`              | SDD            |
+| 3     | `/sprint-plan`            | Sprint Plan    |
+| 4     | `/implement sprint-N`     | Code           |
+| 5     | `/review-sprint sprint-N` | Feedback       |
+| 5.5   | `/audit-sprint sprint-N`  | Approval       |
+| 6     | `/deploy-production`      | Infrastructure |
 
 **Ad-hoc**: `/audit`, `/translate`, `/validate`, `/feedback`, `/compound`, `/enhance`, `/flatline-review`, `/update-loa`, `/loa`
 
@@ -47,18 +47,67 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 - **Karpathy**: Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven
 - **Git Safety**: 4-layer upstream detection with soft block
 
+## Run Mode State Recovery (v1.27.0)
+
+**CRITICAL**: After context compaction or session recovery, ALWAYS check for active run mode.
+
+### Detection
+
+Check `.run/sprint-plan-state.json`:
+
+```bash
+if [[ -f .run/sprint-plan-state.json ]]; then
+  state=$(jq -r '.state' .run/sprint-plan-state.json)
+  if [[ "$state" == "RUNNING" ]]; then
+    # ACTIVE RUN MODE - Resume autonomous execution
+  fi
+fi
+```
+
+### When state=RUNNING
+
+1. **Do NOT ask for confirmation** - continue autonomously
+2. Read current sprint from `.sprints.current` field
+3. Resume the sprint execution loop
+4. Update `.timestamps.last_activity` on each action
+
+### State Values
+
+| State        | Meaning                      | Action              |
+| ------------ | ---------------------------- | ------------------- |
+| `RUNNING`    | Active autonomous execution  | Resume immediately  |
+| `HALTED`     | Stopped due to error/blocker | Await `/run-resume` |
+| `JACKED_OUT` | Completed successfully       | No action needed    |
+
+### Recovery Sequence
+
+```
+1. Check .run/sprint-plan-state.json exists
+2. If state=RUNNING:
+   a. Log: "Resuming run mode after context recovery"
+   b. Read sprints.current for active sprint
+   c. Continue sprint execution loop
+   d. Do NOT prompt user for confirmation
+3. If state=HALTED:
+   a. Inform user of halt reason
+   b. Await /run-resume command
+```
+
+**Rationale**: Run mode is designed for overnight/unattended execution. Context compaction should not interrupt autonomous operation.
+
 ## Invisible Prompt Enhancement (v1.17.0)
 
 Prompts are automatically enhanced before skill execution using PTCF framework.
 
-| Behavior | Description |
-|----------|-------------|
-| Automatic | Prompts scoring < 4 are enhanced invisibly |
-| Silent | No enhancement UI shown to user |
-| Passthrough | Errors use original prompt unchanged |
-| Logged | Activity logged to `grimoires/loa/a2a/trajectory/prompt-enhancement-*.jsonl` |
+| Behavior    | Description                                                                  |
+| ----------- | ---------------------------------------------------------------------------- |
+| Automatic   | Prompts scoring < 4 are enhanced invisibly                                   |
+| Silent      | No enhancement UI shown to user                                              |
+| Passthrough | Errors use original prompt unchanged                                         |
+| Logged      | Activity logged to `grimoires/loa/a2a/trajectory/prompt-enhancement-*.jsonl` |
 
 **Configuration** (`.loa.config.yaml`):
+
 ```yaml
 prompt_enhancement:
   invisible_mode:
@@ -73,23 +122,25 @@ prompt_enhancement:
 
 Learnings are automatically detected and captured during skill execution without user invocation.
 
-| Behavior | Description |
-|----------|-------------|
-| Automatic | Session scanned for learning signals after skill completion |
-| Silent | No output unless finding passes 3+ quality gates |
-| Quality Gates | Depth, Reusability, Trigger Clarity, Verification |
-| Logged | Activity logged to `grimoires/loa/a2a/trajectory/retrospective-*.jsonl` |
+| Behavior      | Description                                                             |
+| ------------- | ----------------------------------------------------------------------- |
+| Automatic     | Session scanned for learning signals after skill completion             |
+| Silent        | No output unless finding passes 3+ quality gates                        |
+| Quality Gates | Depth, Reusability, Trigger Clarity, Verification                       |
+| Logged        | Activity logged to `grimoires/loa/a2a/trajectory/retrospective-*.jsonl` |
 
 **Skills with postludes**:
+
 - `implementing-tasks` - Bug fixes, debugging discoveries
 - `auditing-security` - Security patterns and remediations
 - `reviewing-code` - Code review insights
 
 **Configuration** (`.loa.config.yaml`):
+
 ```yaml
 invisible_retrospective:
   enabled: true
-  surface_threshold: 3  # Min gates to surface (out of 4)
+  surface_threshold: 3 # Min gates to surface (out of 4)
   skills:
     implementing-tasks: true
     auditing-security: true
@@ -104,22 +155,23 @@ Pre-execution validation for skill invocations based on OpenAI's "A Practical Gu
 
 ### Guardrail Types
 
-| Type | Mode | Purpose |
-|------|------|---------|
-| `pii_filter` | blocking | Redact API keys, emails, SSN, etc. |
-| `injection_detection` | blocking | Detect prompt injection patterns |
-| `relevance_check` | advisory | Verify request matches skill |
+| Type                  | Mode     | Purpose                            |
+| --------------------- | -------- | ---------------------------------- |
+| `pii_filter`          | blocking | Redact API keys, emails, SSN, etc. |
+| `injection_detection` | blocking | Detect prompt injection patterns   |
+| `relevance_check`     | advisory | Verify request matches skill       |
 
 ### Danger Level Enforcement
 
-| Level | Interactive | Autonomous |
-|-------|-------------|------------|
-| `safe` | Execute | Execute |
-| `moderate` | Notice | Log |
-| `high` | Confirm | BLOCK (use `--allow-high`) |
-| `critical` | Confirm+Reason | ALWAYS BLOCK |
+| Level      | Interactive    | Autonomous                 |
+| ---------- | -------------- | -------------------------- |
+| `safe`     | Execute        | Execute                    |
+| `moderate` | Notice         | Log                        |
+| `high`     | Confirm        | BLOCK (use `--allow-high`) |
+| `critical` | Confirm+Reason | ALWAYS BLOCK               |
 
 **Skills by danger level**:
+
 - `safe`: discovering-requirements, designing-architecture, reviewing-code, auditing-security
 - `moderate`: implementing-tasks, planning-sprints, mounting-framework
 - `high`: deploying-infrastructure, run-mode, autonomous-agent
@@ -158,32 +210,33 @@ Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning docu
 
 ### How It Works
 
-| Phase | Description |
-|-------|-------------|
-| Phase 0 | Knowledge retrieval (Tier 1: local + Tier 2: NotebookLM) |
-| Phase 1 | 4 parallel calls: GPT review, Opus review, GPT skeptic, Opus skeptic |
+| Phase   | Description                                                             |
+| ------- | ----------------------------------------------------------------------- |
+| Phase 0 | Knowledge retrieval (Tier 1: local + Tier 2: NotebookLM)                |
+| Phase 1 | 4 parallel calls: GPT review, Opus review, GPT skeptic, Opus skeptic    |
 | Phase 2 | Cross-scoring: GPT scores Opus suggestions, Opus scores GPT suggestions |
-| Phase 3 | Consensus extraction: HIGH/DISPUTED/LOW/BLOCKER classification |
+| Phase 3 | Consensus extraction: HIGH/DISPUTED/LOW/BLOCKER classification          |
 
 ### Consensus Thresholds (0-1000 scale)
 
-| Category | Criteria | Action |
-|----------|----------|--------|
-| HIGH_CONSENSUS | Both models >700 | Auto-integrate |
-| DISPUTED | Delta >300 | Present to user (interactive) / Log (autonomous) |
-| LOW_VALUE | Both <400 | Discard |
-| BLOCKER | Skeptic concern >700 | Must address / HALT (autonomous) |
+| Category       | Criteria             | Action                                           |
+| -------------- | -------------------- | ------------------------------------------------ |
+| HIGH_CONSENSUS | Both models >700     | Auto-integrate                                   |
+| DISPUTED       | Delta >300           | Present to user (interactive) / Log (autonomous) |
+| LOW_VALUE      | Both <400            | Discard                                          |
+| BLOCKER        | Skeptic concern >700 | Must address / HALT (autonomous)                 |
 
 ### Autonomous Mode (v1.22.0)
 
 Flatline Protocol integrates with `/autonomous` and `/run sprint-plan` workflows.
 
-| Mode | Behavior |
-|------|----------|
-| Interactive | Present findings to user, await decisions |
-| Autonomous | HIGH_CONSENSUS auto-integrates, BLOCKER halts workflow |
+| Mode        | Behavior                                               |
+| ----------- | ------------------------------------------------------ |
+| Interactive | Present findings to user, await decisions              |
+| Autonomous  | HIGH_CONSENSUS auto-integrates, BLOCKER halts workflow |
 
 **Mode Detection Priority**:
+
 1. CLI flags (`--interactive`, `--autonomous`)
 2. Environment (`LOA_FLATLINE_MODE`)
 3. Config (`autonomous_mode.enabled`)
@@ -195,12 +248,12 @@ Flatline Protocol integrates with `/autonomous` and `/run sprint-plan` workflows
 
 ### Autonomous Actions
 
-| Category | Default Action | Description |
-|----------|----------------|-------------|
-| HIGH_CONSENSUS | `integrate` | Auto-apply to document |
-| DISPUTED | `log` | Record for post-review |
-| BLOCKER | `halt` | Stop workflow, escalate |
-| LOW_VALUE | `skip` | Discard silently |
+| Category       | Default Action | Description             |
+| -------------- | -------------- | ----------------------- |
+| HIGH_CONSENSUS | `integrate`    | Auto-apply to document  |
+| DISPUTED       | `log`          | Record for post-review  |
+| BLOCKER        | `halt`         | Stop workflow, escalate |
+| LOW_VALUE      | `skip`         | Discard silently        |
 
 ### Rollback Support
 
@@ -242,19 +295,19 @@ flatline_protocol:
       notebook_id: ""
 
 autonomous_mode:
-  enabled: false                    # Require explicit opt-in
-  auto_enable_for_ai: true          # Auto-enable for strong AI signals
+  enabled: false # Require explicit opt-in
+  auto_enable_for_ai: true # Auto-enable for strong AI signals
   actions:
-    high_consensus: integrate       # Auto-apply high consensus findings
-    disputed: log                   # Log disputed for post-review
-    blocker: halt                   # Halt workflow on blockers
-    low_value: skip                 # Discard low value findings
+    high_consensus: integrate # Auto-apply high consensus findings
+    disputed: log # Log disputed for post-review
+    blocker: halt # Halt workflow on blockers
+    low_value: skip # Discard low value findings
   thresholds:
-    disputed_halt_percent: 80       # Halt if >80% findings disputed
+    disputed_halt_percent: 80 # Halt if >80% findings disputed
   snapshots:
     enabled: true
     max_count: 100
-    max_bytes: 104857600           # 100MB
+    max_bytes: 104857600 # 100MB
 ```
 
 ### NotebookLM (Optional Tier 2 Knowledge)

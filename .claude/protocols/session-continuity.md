@@ -13,10 +13,10 @@ As of v0.11.0, this protocol integrates with Claude Code's client-side compactio
 
 ### Compaction vs /clear
 
-| Action | Trigger | Checkpoint | Recovery |
-|--------|---------|------------|----------|
+| Action     | Trigger   | Checkpoint          | Recovery                      |
+| ---------- | --------- | ------------------- | ----------------------------- |
 | `/compact` | User/Auto | Simplified (3-step) | Automatic (preserved content) |
-| `/clear` | User | Full (7-step) | Tiered (Level 1/2/3) |
+| `/clear`   | User      | Full (7-step)       | Tiered (Level 1/2/3)          |
 
 ### Using context-manager.sh
 
@@ -40,14 +40,14 @@ As of v0.11.0, this protocol integrates with Claude Code's client-side compactio
 
 Content that survives compaction (configured in `.loa.config.yaml`):
 
-| Item | Status | Rationale |
-|------|--------|-----------|
-| NOTES.md Session Continuity | PRESERVED | Recovery anchor |
-| NOTES.md Decision Log | PRESERVED | Audit trail |
-| Trajectory entries | PRESERVED | External files |
-| Active bead references | PRESERVED | Task continuity |
-| Tool results | COMPACTED | Summarized |
-| Thinking blocks | COMPACTED | Logged to trajectory |
+| Item                        | Status    | Rationale            |
+| --------------------------- | --------- | -------------------- |
+| NOTES.md Session Continuity | PRESERVED | Recovery anchor      |
+| NOTES.md Decision Log       | PRESERVED | Audit trail          |
+| Trajectory entries          | PRESERVED | External files       |
+| Active bead references      | PRESERVED | Task continuity      |
+| Tool results                | COMPACTED | Summarized           |
+| Thinking blocks             | COMPACTED | Logged to trajectory |
 
 See: `.claude/protocols/context-compaction.md` for full compaction protocol.
 
@@ -73,6 +73,7 @@ CRITICAL: Nothing in transient context overrides external ledgers.
 ### Fork Detection
 
 If context window state conflicts with ledger state:
+
 1. **Ledger always wins** - External artifacts are source of truth
 2. **Flag the fork** - Log discrepancy to trajectory
 3. **Resync from ledger** - Re-read authoritative state
@@ -84,6 +85,10 @@ If context window state conflicts with ledger state:
 ```
 SESSION RECOVERY SEQUENCE:
 
+0. Check Run Mode State              # NEW v1.27.0 - FIRST!
+   - If .run/sprint-plan-state.json exists with state=RUNNING:
+   - Resume autonomous execution WITHOUT confirmation
+   - Skip interactive recovery, continue sprint loop
 1. br ready                          # Identify available tasks
 2. br show <active_id>               # Load task context (decisions[], handoffs[])
 3. Tiered Ledger Recovery            # Load NOTES.md (Level 1 default)
@@ -91,27 +96,50 @@ SESSION RECOVERY SEQUENCE:
 5. Resume from "Reasoning State"     # Continue where left off
 ```
 
+#### Run Mode State Check (v1.27.0)
+
+**CRITICAL**: Before any interactive recovery, check for active run mode:
+
+```bash
+# Step 0: Run mode takes precedence
+if [[ -f .run/sprint-plan-state.json ]]; then
+  state=$(jq -r '.state' .run/sprint-plan-state.json)
+  if [[ "$state" == "RUNNING" ]]; then
+    echo "Run mode active - resuming autonomous execution"
+    current=$(jq -r '.sprints.current' .run/sprint-plan-state.json)
+    # Continue sprint $current without user confirmation
+    exit 0  # Skip normal recovery
+  fi
+fi
+# Proceed with normal recovery if not in run mode
+```
+
+This ensures `/run sprint-plan` survives context compaction during overnight execution.
+
 #### Tiered Ledger Recovery
 
-| Level | Tokens | Trigger | Method |
-|-------|--------|---------|--------|
-| **1** | ~100 | Default (all recoveries) | Session Continuity section + last 3 decisions |
-| **2** | ~200-500 | Task needs historical context | `ck --hybrid` for specific decisions |
-| **3** | Full | User explicit request | Full NOTES.md read |
+| Level | Tokens   | Trigger                       | Method                                        |
+| ----- | -------- | ----------------------------- | --------------------------------------------- |
+| **1** | ~100     | Default (all recoveries)      | Session Continuity section + last 3 decisions |
+| **2** | ~200-500 | Task needs historical context | `ck --hybrid` for specific decisions          |
+| **3** | Full     | User explicit request         | Full NOTES.md read                            |
 
 **Level 1 Recovery** (default):
+
 ```bash
 # Load only Session Continuity section (~100 tokens)
 head -50 "${PROJECT_ROOT}/grimoires/loa/NOTES.md" | grep -A 20 "## Session Continuity"
 ```
 
 **Level 2 Recovery** (on-demand):
+
 ```bash
 # Semantic search for specific context
 ck --hybrid "authentication decision" "${PROJECT_ROOT}/grimoires/loa/" --top-k 3 --jsonl
 ```
 
 **Level 3 Recovery** (explicit):
+
 ```bash
 # Full read for architectural review
 cat "${PROJECT_ROOT}/grimoires/loa/NOTES.md"
@@ -146,6 +174,7 @@ timestamp: 2024-01-15T14:30:00Z
 **Purpose**: Ensure work survives crashes or unexpected session termination.
 
 **Actions**:
+
 1. Append recent findings to NOTES.md Decision Log
 2. Update active Bead with progress-to-date
 3. Log trajectory: `{"phase":"delta_sync","tokens":5000,"decisions_persisted":N}`
@@ -177,35 +206,45 @@ The Session Continuity section in NOTES.md is the primary recovery artifact.
 
 ```markdown
 ## Session Continuity
+
 <!-- CRITICAL: Load this section FIRST after /clear (~100 tokens) -->
 
 ### Active Context
+
 - **Current Bead**: beads-x7y8 (task description)
 - **Last Checkpoint**: 2024-01-15T14:30:00Z
 - **Reasoning State**: Where we left off, what's next
 
 ### Lightweight Identifiers
+
 <!-- Absolute paths only - retrieve full content on-demand -->
-| Identifier | Purpose | Last Verified |
-|------------|---------|---------------|
-| ${PROJECT_ROOT}/src/auth/jwt.ts:45-67 | Token validation logic | 14:25:00Z |
-| ${PROJECT_ROOT}/src/auth/refresh.ts:12-34 | Refresh flow | 14:28:00Z |
+
+| Identifier                                | Purpose                | Last Verified |
+| ----------------------------------------- | ---------------------- | ------------- |
+| ${PROJECT_ROOT}/src/auth/jwt.ts:45-67     | Token validation logic | 14:25:00Z     |
+| ${PROJECT_ROOT}/src/auth/refresh.ts:12-34 | Refresh flow           | 14:28:00Z     |
 
 ### Decision Log
+
 <!-- Decisions survive context wipes - permanent record -->
 
 #### 2024-01-15T14:30:00Z - Decision Title
+
 **Decision**: What we decided
 **Rationale**: Why we decided it
 **Evidence**:
+
 - `code quote` [${PROJECT_ROOT}/file.ts:line]
-**Test Scenarios**:
+  **Test Scenarios**:
+
 1. Happy path scenario
 2. Edge case scenario
 3. Error handling scenario
 
 ### Pending Questions
+
 <!-- Carry forward across sessions -->
+
 - [ ] Open question 1
 - [ ] Open question 2
 ```
@@ -213,6 +252,7 @@ The Session Continuity section in NOTES.md is the primary recovery artifact.
 ### Path Requirements
 
 **REQUIRED**: All paths must use `${PROJECT_ROOT}` prefix
+
 ```
 VALID:   ${PROJECT_ROOT}/src/auth/jwt.ts:45
 INVALID: src/auth/jwt.ts:45 (relative)
@@ -299,35 +339,35 @@ questions:
 
 #### decisions[] Array
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `ts` | ISO 8601 | Yes | Timestamp of decision |
-| `decision` | string | Yes | What was decided |
-| `rationale` | string | Yes | Why it was decided |
-| `evidence` | array | Yes | Code citations with quotes |
-| `evidence[].path` | string | Yes | `${PROJECT_ROOT}/...` absolute path |
-| `evidence[].line` | number | Yes | Line number |
-| `evidence[].quote` | string | Yes | Word-for-word code quote |
+| Field              | Type     | Required | Description                         |
+| ------------------ | -------- | -------- | ----------------------------------- |
+| `ts`               | ISO 8601 | Yes      | Timestamp of decision               |
+| `decision`         | string   | Yes      | What was decided                    |
+| `rationale`        | string   | Yes      | Why it was decided                  |
+| `evidence`         | array    | Yes      | Code citations with quotes          |
+| `evidence[].path`  | string   | Yes      | `${PROJECT_ROOT}/...` absolute path |
+| `evidence[].line`  | number   | Yes      | Line number                         |
+| `evidence[].quote` | string   | Yes      | Word-for-word code quote            |
 
 #### test_scenarios[] Array
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Descriptive scenario name |
-| `type` | enum | Yes | `happy_path`, `edge_case`, or `error_handling` |
-| `expected` | string | Yes | Expected behavior/outcome |
+| Field      | Type   | Required | Description                                    |
+| ---------- | ------ | -------- | ---------------------------------------------- |
+| `name`     | string | Yes      | Descriptive scenario name                      |
+| `type`     | enum   | Yes      | `happy_path`, `edge_case`, or `error_handling` |
+| `expected` | string | Yes      | Expected behavior/outcome                      |
 
 **EDD Requirement**: Minimum 3 test scenarios before task completion.
 
 #### handoffs[] Array
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `session_id` | string | Yes | Unique session identifier |
-| `ended` | ISO 8601 | Yes | Timestamp of session end |
-| `notes_ref` | string | Yes | Line reference to NOTES.md |
-| `trajectory_ref` | string | Yes | Reference to trajectory log entry |
-| `grounding_ratio` | number | Yes | Grounding ratio at handoff (>= 0.95) |
+| Field             | Type     | Required | Description                          |
+| ----------------- | -------- | -------- | ------------------------------------ |
+| `session_id`      | string   | Yes      | Unique session identifier            |
+| `ended`           | ISO 8601 | Yes      | Timestamp of session end             |
+| `notes_ref`       | string   | Yes      | Line reference to NOTES.md           |
+| `trajectory_ref`  | string   | Yes      | Reference to trajectory log entry    |
+| `grounding_ratio` | number   | Yes      | Grounding ratio at handoff (>= 0.95) |
 
 ### Backwards Compatibility
 
@@ -362,20 +402,29 @@ FORK DETECTION PROTOCOL:
 ```
 
 **Trajectory log for fork**:
+
 ```jsonl
-{"ts":"2024-01-15T15:00:00Z","agent":"implementing-tasks","phase":"fork_detected","bead_id":"beads-x7y8","context_decision":"Use stateless tokens","bead_decision":"Use rotating refresh tokens","resolution":"bead_wins"}
+{
+  "ts": "2024-01-15T15:00:00Z",
+  "agent": "implementing-tasks",
+  "phase": "fork_detected",
+  "bead_id": "beads-x7y8",
+  "context_decision": "Use stateless tokens",
+  "bead_decision": "Use rotating refresh tokens",
+  "resolution": "bead_wins"
+}
 ```
 
 ### CLI Extensions (br commands)
 
 Extended beads_rust CLI operations for v0.19.0:
 
-| Operation | Command | Purpose |
-|-----------|---------|---------|
-| View with decisions | `br show <id>` | Displays decisions[], handoffs[] |
-| Append decision | `br comments add <id> "DECISION: ..."` | Adds to comment history |
-| Log handoff | `br comments add <id> "HANDOFF: ..."` | Records session handoff |
-| Check fork | `br diff <id>` | Compare context vs Bead state |
+| Operation           | Command                                | Purpose                          |
+| ------------------- | -------------------------------------- | -------------------------------- |
+| View with decisions | `br show <id>`                         | Displays decisions[], handoffs[] |
+| Append decision     | `br comments add <id> "DECISION: ..."` | Adds to comment history          |
+| Log handoff         | `br comments add <id> "HANDOFF: ..."`  | Records session handoff          |
+| Check fork          | `br diff <id>`                         | Compare context vs Bead state    |
 
 **Note**: CLI extensions are optional enhancements. NOTES.md provides fallback.
 
@@ -453,12 +502,12 @@ fi
 
 **Fallback Locations**:
 
-| Bead Feature | Fallback Location |
-|--------------|-------------------|
-| decisions[] | NOTES.md ## Decision Log |
-| handoffs[] | NOTES.md ## Session Continuity |
-| test_scenarios[] | NOTES.md ## Test Scenarios |
-| next_steps[] | NOTES.md ## Active Sub-Goals |
+| Bead Feature     | Fallback Location              |
+| ---------------- | ------------------------------ |
+| decisions[]      | NOTES.md ## Decision Log       |
+| handoffs[]       | NOTES.md ## Session Continuity |
+| test_scenarios[] | NOTES.md ## Test Scenarios     |
+| next_steps[]     | NOTES.md ## Active Sub-Goals   |
 
 ### br sync for Session End
 
@@ -474,16 +523,16 @@ git push              # Push to remote
 
 ## Anti-Patterns
 
-| Anti-Pattern | Correct Approach |
-|--------------|------------------|
-| "I'll remember this" | Write to NOTES.md **NOW** |
-| Trust compacted context | Trust only **ledgers** |
-| Relative paths | ALWAYS `${PROJECT_ROOT}` absolute paths |
-| Defer synthesis | Synthesize **continuously** |
-| Reason without Bead | ALWAYS `br show` first |
-| Eager load files | Store **identifiers**, JIT retrieve |
-| `/clear` without checkpoint | Execute **synthesis checkpoint** first |
-| Load full Decision Log | Level 1 recovery: **last 3 decisions only** |
+| Anti-Pattern                | Correct Approach                            |
+| --------------------------- | ------------------------------------------- |
+| "I'll remember this"        | Write to NOTES.md **NOW**                   |
+| Trust compacted context     | Trust only **ledgers**                      |
+| Relative paths              | ALWAYS `${PROJECT_ROOT}` absolute paths     |
+| Defer synthesis             | Synthesize **continuously**                 |
+| Reason without Bead         | ALWAYS `br show` first                      |
+| Eager load files            | Store **identifiers**, JIT retrieve         |
+| `/clear` without checkpoint | Execute **synthesis checkpoint** first      |
+| Load full Decision Log      | Level 1 recovery: **last 3 decisions only** |
 
 ## Integration Points
 
@@ -615,9 +664,9 @@ See `.loa.config.yaml`:
 
 ```yaml
 session_continuity:
-  tiered_recovery: true     # Enable Level 1/2/3 recovery
-  level1_tokens: 100        # Max tokens for Level 1
-  level2_tokens: 500        # Max tokens for Level 2
+  tiered_recovery: true # Enable Level 1/2/3 recovery
+  level1_tokens: 100 # Max tokens for Level 1
+  level2_tokens: 500 # Max tokens for Level 2
 ```
 
 ---
