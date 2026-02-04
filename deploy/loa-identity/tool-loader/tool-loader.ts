@@ -41,9 +41,28 @@ export interface LoaderState {
   tools: Record<string, ToolStatus>;
 }
 
-const TOOL_DIR = process.env.LOA_TOOL_DIR ?? "/data/tools";
+// SECURITY: Validate LOA_TOOL_DIR is within expected boundaries (MEDIUM-003 remediation)
+const rawToolDir = process.env.LOA_TOOL_DIR ?? "/data/tools";
+const ALLOWED_PREFIXES = ["/data/", "/tmp/", "/workspace/"];
+const isValidToolDir = ALLOWED_PREFIXES.some((prefix) => rawToolDir.startsWith(prefix));
+if (!isValidToolDir) {
+  console.error(
+    `[tool-loader] SECURITY: LOA_TOOL_DIR must start with one of: ${ALLOWED_PREFIXES.join(", ")}`,
+  );
+  console.error(`[tool-loader] Got: ${rawToolDir}`);
+  console.error("[tool-loader] Falling back to /data/tools");
+}
+const TOOL_DIR = isValidToolDir ? rawToolDir : "/data/tools";
 const STATE_FILE = join(TOOL_DIR, "loader-state.json");
 const SCHEMA_VERSION = 1;
+
+// SECURITY: Known checksums for rustup-init (CRITICAL-001 remediation)
+// Update these when upgrading Rust toolchain version
+const RUSTUP_VERSION = "1.27.1";
+const RUSTUP_CHECKSUMS: Record<string, string> = {
+  "x86_64-unknown-linux-gnu": "6aeece6993e902708983b209d04c0d1dbb14ebb405ddb87def578d41f920f56d",
+  "aarch64-unknown-linux-gnu": "1cffbf51e63e634c746f741de50649bbbcbd9dbe1de363c9ecef64e278f3af78",
+};
 
 /**
  * Tool specifications - ordered by priority
@@ -53,10 +72,25 @@ const TOOLS: ToolSpec[] = [
     name: "rust",
     version: "stable",
     installType: "script",
+    // SECURITY: Download rustup-init binary and verify checksum before executing (CRITICAL-001 remediation)
+    // This replaces the dangerous curl | sh pattern with verified binary execution
     installCmd: [
       "sh",
       "-c",
-      'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal',
+      `set -e; \
+ARCH=$(uname -m); \
+case "$ARCH" in \
+  x86_64) TARGET="x86_64-unknown-linux-gnu"; EXPECTED_HASH="6aeece6993e902708983b209d04c0d1dbb14ebb405ddb87def578d41f920f56d" ;; \
+  aarch64) TARGET="aarch64-unknown-linux-gnu"; EXPECTED_HASH="1cffbf51e63e634c746f741de50649bbbcbd9dbe1de363c9ecef64e278f3af78" ;; \
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
+esac; \
+curl --proto "=https" --tlsv1.2 -sSf \
+  "https://static.rust-lang.org/rustup/archive/1.27.1/$TARGET/rustup-init" \
+  -o /tmp/rustup-init && \
+echo "$EXPECTED_HASH  /tmp/rustup-init" | sha256sum -c - && \
+chmod +x /tmp/rustup-init && \
+/tmp/rustup-init -y --default-toolchain stable --profile minimal && \
+rm /tmp/rustup-init`,
     ],
     verifyCmd: ["/root/.cargo/bin/rustc", "--version"],
     binaryPath: "/root/.cargo/bin/rustc",
@@ -103,15 +137,20 @@ const TOOLS: ToolSpec[] = [
     name: "sentence-transformers",
     version: "latest",
     installType: "pip",
+    // SECURITY: Use virtual environment instead of --break-system-packages (MEDIUM-002 remediation)
     installCmd: [
-      "pip3",
-      "install",
-      "--no-cache-dir",
-      "--break-system-packages",
-      "sentence-transformers",
+      "sh",
+      "-c",
+      `set -e; \
+VENV_DIR="/data/tools/python-venv"; \
+if [ ! -d "$VENV_DIR" ]; then \
+  python3 -m venv "$VENV_DIR"; \
+fi; \
+"$VENV_DIR/bin/pip" install --no-cache-dir sentence-transformers; \
+ln -sf "$VENV_DIR/bin/python" /usr/local/bin/loa-python`,
     ],
     verifyCmd: [
-      "python3",
+      "/data/tools/python-venv/bin/python",
       "-c",
       'from sentence_transformers import SentenceTransformer; print("OK")',
     ],
@@ -196,21 +235,36 @@ export class ToolLoader {
 
       this.currentProcess = proc;
 
-      let output = "";
-      const maxOutput = 10000; // Limit output capture
+      // SECURITY: Keep both beginning and end of output to not hide errors (LOW-002 remediation)
+      let startOutput = "";
+      let endOutput = "";
+      const maxStartSize = 5000;
+      const maxEndSize = 5000;
+      let totalSize = 0;
+
+      const appendOutput = (chunk: string) => {
+        totalSize += chunk.length;
+        // Always capture the start
+        if (startOutput.length < maxStartSize) {
+          const remaining = maxStartSize - startOutput.length;
+          startOutput += chunk.slice(0, remaining);
+          chunk = chunk.slice(remaining);
+        }
+        // Roll the end buffer for large outputs
+        if (chunk.length > 0) {
+          endOutput += chunk;
+          if (endOutput.length > maxEndSize * 2) {
+            endOutput = endOutput.slice(-maxEndSize);
+          }
+        }
+      };
 
       proc.stdout?.on("data", (d) => {
-        const chunk = d.toString();
-        if (output.length < maxOutput) {
-          output += chunk;
-        }
+        appendOutput(d.toString());
       });
 
       proc.stderr?.on("data", (d) => {
-        const chunk = d.toString();
-        if (output.length < maxOutput) {
-          output += chunk;
-        }
+        appendOutput(d.toString());
       });
 
       const timeout = setTimeout(() => {
@@ -226,9 +280,15 @@ export class ToolLoader {
         clearTimeout(timeout);
         this.currentProcess = null;
         const duration = Math.round((Date.now() - startTime) / 1000);
+        // Combine start and end, adding truncation marker if needed
+        let finalOutput = startOutput;
+        if (endOutput.length > 0 && totalSize > maxStartSize) {
+          finalOutput += `\n... [${totalSize - startOutput.length - endOutput.length} bytes truncated] ...\n`;
+          finalOutput += endOutput.slice(-maxEndSize);
+        }
         resolve({
           ok: code === 0,
-          output: output.trim().slice(-2000), // Keep last 2000 chars
+          output: finalOutput.trim(),
           duration,
         });
       });
