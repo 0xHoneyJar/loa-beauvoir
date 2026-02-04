@@ -22,7 +22,6 @@ fi
 CONFIG_DIR="/root/.clawdbot"
 CONFIG_FILE="$CONFIG_DIR/clawdbot.json"
 WORKSPACE="/root/clawd"
-BACKUP_DIR="/data/moltbot"
 LOA_WORKSPACE="/workspace"
 GRIMOIRE_DIR="$LOA_WORKSPACE/grimoires/loa"
 
@@ -30,12 +29,14 @@ echo "[loa] Starting Loa Cloud Stack"
 echo "[loa] Config directory: $CONFIG_DIR"
 echo "[loa] Workspace: $WORKSPACE"
 echo "[loa] Loa workspace: $LOA_WORKSPACE"
+echo "[loa] BEAUVOIR_DEV_MODE=${BEAUVOIR_DEV_MODE:-0}"
 
 # Create directories
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$WORKSPACE"
-mkdir -p "$BACKUP_DIR"
 mkdir -p "$GRIMOIRE_DIR/memory"
+# Create backup dir for R2 persistence (prod only)
+[ "${BEAUVOIR_DEV_MODE:-0}" != "1" ] && mkdir -p "/data/moltbot"
 
 # Set Loa identity - critical for isolation from moltbot
 export CLAUDE_CONFIG_DIR="/workspace/.claude"
@@ -103,6 +104,13 @@ legacy_check_state_integrity() {
 }
 
 legacy_restore_from_r2() {
+    # Skip R2 in dev mode
+    if [ "${BEAUVOIR_DEV_MODE:-0}" = "1" ]; then
+        echo "[loa] R2 skipped (BEAUVOIR_DEV_MODE=1)"
+        return 1
+    fi
+
+    BACKUP_DIR="/data/moltbot"
     if [ -d "$BACKUP_DIR/grimoires/loa" ]; then
         echo "[loa] Restoring grimoires from R2 backup..."
         cp -a "$BACKUP_DIR/grimoires/loa/." "$GRIMOIRE_DIR/" 2>/dev/null || true
@@ -133,8 +141,9 @@ if [ "${BEAUVOIR_DEGRADED:-0}" = "1" ]; then
     echo "[loa] Some features may be limited until recovery succeeds"
 fi
 
-# Restore gateway config from R2 backup if available
-if [ -f "$BACKUP_DIR/clawdbot/clawdbot.json" ]; then
+# Restore gateway config from R2 backup if available (skip in dev mode)
+BACKUP_DIR="/data/moltbot"
+if [ "${BEAUVOIR_DEV_MODE:-0}" != "1" ] && [ -f "$BACKUP_DIR/clawdbot/clawdbot.json" ]; then
     echo "[loa] Restoring gateway config from R2 backup..."
     cp -a "$BACKUP_DIR/clawdbot/." "$CONFIG_DIR/" 2>/dev/null || true
 fi

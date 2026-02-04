@@ -1,5 +1,6 @@
 # =============================================================================
 # Loa Cloud Stack - Container Image
+# Build: 2026-02-04-v2 - Force fresh rollout to fix ImagePullError
 # =============================================================================
 # Layers:
 #   L0: Loa System Zone (fetched from GitHub at build time)
@@ -16,6 +17,10 @@
 # =============================================================================
 
 FROM docker.io/cloudflare/sandbox:0.7.0
+
+# Cache bust to force fresh rollout (change this value to trigger rebuild)
+ARG CACHE_BUST=2026-02-04-v4-no-r2
+RUN echo "Build timestamp: $CACHE_BUST"
 
 # -----------------------------------------------------------------------------
 # Stage 1: System Dependencies
@@ -63,38 +68,31 @@ RUN npm install -g pnpm@10
 
 # -----------------------------------------------------------------------------
 # Stage 1.5: Loa Optimizations (Rust + Python tools)
+# DISABLED: These add ~10GB to the image and cause push timeouts.
+# Re-enable when Cloudflare supports larger container images.
 # -----------------------------------------------------------------------------
 
-# Install Rust toolchain for ck-search and beads_rust
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
-    && rustc --version \
-    && cargo --version
-
-# Install ck-search (semantic code search) - OPTIONAL
-# Benefits: 80-90% faster searches, Ghost Feature detection
-# Note: May fail on some platforms due to ONNX runtime issues
-RUN cargo install ck-search && ck --version || echo "ck-search installation skipped (optional)"
-
-# Install beads_rust (persistent task graph) - OPTIONAL
-# Benefits: Cross-session task persistence, dependency tracking
-# Note: Package may not be published on crates.io yet
-RUN cargo install beads_rust && br --version || echo "beads_rust installation skipped (optional)"
-
-# Install Python packages for Memory Stack - OPTIONAL
-# WARNING: This adds ~2-3GB for PyTorch + transformers
-# Benefits: Semantic memory recall, NOTES.md sync
-RUN pip3 install --no-cache-dir sentence-transformers \
-    && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')" \
-    || echo "sentence-transformers installation skipped (optional)"
-
-# Install patchright for Flatline NotebookLM integration - OPTIONAL
-# Benefits: Query NotebookLM notebooks for domain knowledge
-RUN pip3 install --no-cache-dir patchright \
-    && python3 -m patchright install chromium \
-    || echo "patchright installation skipped (optional)"
+# NOTE: The following are disabled to keep image size under 6GB:
+# - Rust toolchain + ck-search (~500MB compiled)
+# - sentence-transformers + PyTorch + CUDA (~8GB)
+# - patchright + Chromium (~170MB)
+#
+# To re-enable, uncomment the lines below:
+#
+# ENV RUSTUP_HOME=/usr/local/rustup \
+#     CARGO_HOME=/usr/local/cargo \
+#     PATH=/usr/local/cargo/bin:$PATH
+# RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
+#     && rustc --version \
+#     && cargo --version
+# RUN cargo install ck-search && ck --version || echo "ck-search installation skipped (optional)"
+# RUN cargo install beads_rust && br --version || echo "beads_rust installation skipped (optional)"
+# RUN pip3 install --no-cache-dir sentence-transformers \
+#     && python3 -c "from sentence_transformers import SentenceTransformer; print('sentence-transformers OK')" \
+#     || echo "sentence-transformers installation skipped (optional)"
+# RUN pip3 install --no-cache-dir patchright \
+#     && python3 -m patchright install chromium \
+#     || echo "patchright installation skipped (optional)"
 
 # -----------------------------------------------------------------------------
 # Stage 2: OpenClaw Gateway

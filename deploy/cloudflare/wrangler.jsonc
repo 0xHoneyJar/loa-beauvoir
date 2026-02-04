@@ -5,7 +5,7 @@
   "compatibility_date": "2025-05-06",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   // Static assets for admin UI (built by vite)
   "assets": {
@@ -13,11 +13,11 @@
     "not_found_handling": "single-page-application",
     "html_handling": "auto-trailing-slash",
     "binding": "ASSETS",
-    "run_worker_first": true
+    "run_worker_first": true,
   },
   // Build handled by vite (moltworker)
   "build": {
-    "command": "cd ../../upstream/moltworker && npm install && npm run build"
+    "command": "cd ../../upstream/moltworker && npm install && npm run build",
   },
   // Container configuration - uses Loa's Dockerfile, not moltworker's
   "containers": [
@@ -25,43 +25,44 @@
       "class_name": "Sandbox",
       "image": "../Dockerfile",
       "instance_type": "standard-4",
-      "max_instances": 1
-    }
+      "max_instances": 1,
+    },
   ],
   "durable_objects": {
     "bindings": [
       {
         "class_name": "Sandbox",
-        "name": "Sandbox"
-      }
-    ]
+        "name": "Sandbox",
+      },
+    ],
   },
   "migrations": [
     {
       "new_sqlite_classes": ["Sandbox"],
-      "tag": "v1"
-    }
+      "tag": "v1",
+    },
   ],
   // R2 bucket for persistent storage
+  // Note: R2 operations are skipped when BEAUVOIR_DEV_MODE=1
   "r2_buckets": [
     {
       "binding": "MOLTBOT_BUCKET",
-      "bucket_name": "loa-beauvoir-data"
-    }
+      "bucket_name": "loa-beauvoir-data",
+    },
   ],
   // Cron trigger to sync state to R2 every 5 minutes
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["*/5 * * * *"],
   },
   // Browser Rendering binding for CDP shim
   "browser": {
-    "binding": "BROWSER"
+    "binding": "BROWSER",
   },
   // Environment variables
   "vars": {
     "LOA_VERSION": "1.16.0",
-    "WORKSPACE": "/workspace"
-  }
+    "WORKSPACE": "/workspace",
+  },
   // =============================================================================
   // SECRETS (configure via `wrangler secret put <NAME>`)
   // =============================================================================

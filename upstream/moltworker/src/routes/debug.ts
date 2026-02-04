@@ -1,6 +1,6 @@
-import { Hono } from 'hono';
-import type { AppEnv } from '../types';
-import { findExistingMoltbotProcess } from '../gateway';
+import { Hono } from "hono";
+import type { AppEnv } from "../types";
+import { findExistingMoltbotProcess } from "../gateway";
 
 /**
  * Debug routes for inspecting container state
@@ -10,70 +10,72 @@ import { findExistingMoltbotProcess } from '../gateway';
 const debug = new Hono<AppEnv>();
 
 // GET /debug/version - Returns version info from inside the container
-debug.get('/version', async (c) => {
-  const sandbox = c.get('sandbox');
+debug.get("/version", async (c) => {
+  const sandbox = c.get("sandbox");
   try {
     // Get moltbot version (CLI is still named clawdbot until upstream renames)
-    const versionProcess = await sandbox.startProcess('clawdbot --version');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const versionProcess = await sandbox.startProcess("clawdbot --version");
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const versionLogs = await versionProcess.getLogs();
-    const moltbotVersion = (versionLogs.stdout || versionLogs.stderr || '').trim();
+    const moltbotVersion = (versionLogs.stdout || versionLogs.stderr || "").trim();
 
     // Get node version
-    const nodeProcess = await sandbox.startProcess('node --version');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const nodeProcess = await sandbox.startProcess("node --version");
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const nodeLogs = await nodeProcess.getLogs();
-    const nodeVersion = (nodeLogs.stdout || '').trim();
+    const nodeVersion = (nodeLogs.stdout || "").trim();
 
     return c.json({
       moltbot_version: moltbotVersion,
       node_version: nodeVersion,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return c.json({ status: 'error', message: `Failed to get version info: ${errorMessage}` }, 500);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return c.json({ status: "error", message: `Failed to get version info: ${errorMessage}` }, 500);
   }
 });
 
 // GET /debug/processes - List all processes with optional logs
-debug.get('/processes', async (c) => {
-  const sandbox = c.get('sandbox');
+debug.get("/processes", async (c) => {
+  const sandbox = c.get("sandbox");
   try {
     const processes = await sandbox.listProcesses();
-    const includeLogs = c.req.query('logs') === 'true';
+    const includeLogs = c.req.query("logs") === "true";
 
-    const processData = await Promise.all(processes.map(async p => {
-      const data: Record<string, unknown> = {
-        id: p.id,
-        command: p.command,
-        status: p.status,
-        startTime: p.startTime?.toISOString(),
-        endTime: p.endTime?.toISOString(),
-        exitCode: p.exitCode,
-      };
+    const processData = await Promise.all(
+      processes.map(async (p) => {
+        const data: Record<string, unknown> = {
+          id: p.id,
+          command: p.command,
+          status: p.status,
+          startTime: p.startTime?.toISOString(),
+          endTime: p.endTime?.toISOString(),
+          exitCode: p.exitCode,
+        };
 
-      if (includeLogs) {
-        try {
-          const logs = await p.getLogs();
-          data.stdout = logs.stdout || '';
-          data.stderr = logs.stderr || '';
-        } catch {
-          data.logs_error = 'Failed to retrieve logs';
+        if (includeLogs) {
+          try {
+            const logs = await p.getLogs();
+            data.stdout = logs.stdout || "";
+            data.stderr = logs.stderr || "";
+          } catch {
+            data.logs_error = "Failed to retrieve logs";
+          }
         }
-      }
 
-      return data;
-    }));
+        return data;
+      }),
+    );
 
     // Sort by status (running first, then starting, completed, failed)
     // Within each status, sort by startTime descending (newest first)
     const statusOrder: Record<string, number> = {
-      'running': 0,
-      'starting': 1,
-      'completed': 2,
-      'failed': 3,
+      running: 0,
+      starting: 1,
+      completed: 2,
+      failed: 3,
     };
-    
+
     processData.sort((a, b) => {
       const statusA = statusOrder[a.status as string] ?? 99;
       const statusB = statusOrder[b.status as string] ?? 99;
@@ -81,36 +83,36 @@ debug.get('/processes', async (c) => {
         return statusA - statusB;
       }
       // Within same status, sort by startTime descending
-      const timeA = a.startTime as string || '';
-      const timeB = b.startTime as string || '';
+      const timeA = (a.startTime as string) || "";
+      const timeB = (b.startTime as string) || "";
       return timeB.localeCompare(timeA);
     });
 
     return c.json({ count: processes.length, processes: processData });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: errorMessage }, 500);
   }
 });
 
 // GET /debug/gateway-api - Probe the moltbot gateway HTTP API
-debug.get('/gateway-api', async (c) => {
-  const sandbox = c.get('sandbox');
-  const path = c.req.query('path') || '/';
+debug.get("/gateway-api", async (c) => {
+  const sandbox = c.get("sandbox");
+  const path = c.req.query("path") || "/";
   const MOLTBOT_PORT = 18789;
-  
+
   try {
     const url = `http://localhost:${MOLTBOT_PORT}${path}`;
     const response = await sandbox.containerFetch(new Request(url), MOLTBOT_PORT);
-    const contentType = response.headers.get('content-type') || '';
-    
+    const contentType = response.headers.get("content-type") || "";
+
     let body: string | object;
-    if (contentType.includes('application/json')) {
+    if (contentType.includes("application/json")) {
       body = await response.json();
     } else {
       body = await response.text();
     }
-    
+
     return c.json({
       path,
       status: response.status,
@@ -118,24 +120,24 @@ debug.get('/gateway-api', async (c) => {
       body,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: errorMessage, path }, 500);
   }
 });
 
 // GET /debug/cli - Test moltbot CLI commands (CLI is still named clawdbot)
-debug.get('/cli', async (c) => {
-  const sandbox = c.get('sandbox');
-  const cmd = c.req.query('cmd') || 'clawdbot --help';
-  
+debug.get("/cli", async (c) => {
+  const sandbox = c.get("sandbox");
+  const cmd = c.req.query("cmd") || "clawdbot --help";
+
   try {
     const proc = await sandbox.startProcess(cmd);
-    
+
     // Wait longer for command to complete
     let attempts = 0;
     while (attempts < 30) {
-      await new Promise(r => setTimeout(r, 500));
-      if (proc.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 500));
+      if (proc.status !== "running") break;
       attempts++;
     }
 
@@ -145,70 +147,76 @@ debug.get('/cli', async (c) => {
       status: proc.status,
       exitCode: proc.exitCode,
       attempts,
-      stdout: logs.stdout || '',
-      stderr: logs.stderr || '',
+      stdout: logs.stdout || "",
+      stderr: logs.stderr || "",
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: errorMessage, command: cmd }, 500);
   }
 });
 
 // GET /debug/logs - Returns container logs for debugging
-debug.get('/logs', async (c) => {
-  const sandbox = c.get('sandbox');
+debug.get("/logs", async (c) => {
+  const sandbox = c.get("sandbox");
   try {
-    const processId = c.req.query('id');
+    const processId = c.req.query("id");
     let process = null;
 
     if (processId) {
       const processes = await sandbox.listProcesses();
-      process = processes.find(p => p.id === processId);
+      process = processes.find((p) => p.id === processId);
       if (!process) {
-        return c.json({
-          status: 'not_found',
-          message: `Process ${processId} not found`,
-          stdout: '',
-          stderr: '',
-        }, 404);
+        return c.json(
+          {
+            status: "not_found",
+            message: `Process ${processId} not found`,
+            stdout: "",
+            stderr: "",
+          },
+          404,
+        );
       }
     } else {
       process = await findExistingMoltbotProcess(sandbox);
       if (!process) {
         return c.json({
-          status: 'no_process',
-          message: 'No Moltbot process is currently running',
-          stdout: '',
-          stderr: '',
+          status: "no_process",
+          message: "No Moltbot process is currently running",
+          stdout: "",
+          stderr: "",
         });
       }
     }
 
     const logs = await process.getLogs();
     return c.json({
-      status: 'ok',
+      status: "ok",
       process_id: process.id,
       process_status: process.status,
-      stdout: logs.stdout || '',
-      stderr: logs.stderr || '',
+      stdout: logs.stdout || "",
+      stderr: logs.stderr || "",
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return c.json({
-      status: 'error',
-      message: `Failed to get logs: ${errorMessage}`,
-      stdout: '',
-      stderr: '',
-    }, 500);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return c.json(
+      {
+        status: "error",
+        message: `Failed to get logs: ${errorMessage}`,
+        stdout: "",
+        stderr: "",
+      },
+      500,
+    );
   }
 });
 
 // GET /debug/ws-test - Interactive WebSocket debug page
-debug.get('/ws-test', async (c) => {
-  const host = c.req.header('host') || 'localhost';
-  const protocol = c.req.header('x-forwarded-proto') || 'https';
-  const wsProtocol = protocol === 'https' ? 'wss' : 'ws';
-  
+debug.get("/ws-test", async (c) => {
+  const host = c.req.header("host") || "localhost";
+  const protocol = c.req.header("x-forwarded-proto") || "https";
+  const wsProtocol = protocol === "https" ? "wss" : "ws";
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -332,52 +340,66 @@ debug.get('/ws-test', async (c) => {
   </script>
 </body>
 </html>`;
-  
+
   return c.html(html);
 });
 
 // GET /debug/env - Show environment configuration (sanitized)
-debug.get('/env', async (c) => {
+debug.get("/env", async (c) => {
   return c.json({
+    // AI providers
     has_anthropic_key: !!c.env.ANTHROPIC_API_KEY,
     has_openai_key: !!c.env.OPENAI_API_KEY,
+    has_ai_gateway_key: !!c.env.AI_GATEWAY_API_KEY,
+    ai_gateway_base_url: c.env.AI_GATEWAY_BASE_URL ? "(set)" : undefined,
+    // Gateway auth
     has_gateway_token: !!c.env.MOLTBOT_GATEWAY_TOKEN,
+    // R2 persistence
     has_r2_access_key: !!c.env.R2_ACCESS_KEY_ID,
     has_r2_secret_key: !!c.env.R2_SECRET_ACCESS_KEY,
     has_cf_account_id: !!c.env.CF_ACCOUNT_ID,
+    // Messaging channels
+    has_telegram_token: !!c.env.TELEGRAM_BOT_TOKEN,
+    telegram_dm_policy: c.env.TELEGRAM_DM_POLICY,
+    has_discord_token: !!c.env.DISCORD_BOT_TOKEN,
+    discord_dm_policy: c.env.DISCORD_DM_POLICY,
+    has_slack_bot_token: !!c.env.SLACK_BOT_TOKEN,
+    has_slack_app_token: !!c.env.SLACK_APP_TOKEN,
+    // Debug/dev settings
     dev_mode: c.env.DEV_MODE,
     debug_routes: c.env.DEBUG_ROUTES,
     bind_mode: c.env.CLAWDBOT_BIND_MODE,
+    // Cloudflare Access
     cf_access_team_domain: c.env.CF_ACCESS_TEAM_DOMAIN,
     has_cf_access_aud: !!c.env.CF_ACCESS_AUD,
   });
 });
 
 // GET /debug/container-config - Read the moltbot config from inside the container
-debug.get('/container-config', async (c) => {
-  const sandbox = c.get('sandbox');
-  
+debug.get("/container-config", async (c) => {
+  const sandbox = c.get("sandbox");
+
   try {
-    const proc = await sandbox.startProcess('cat /root/.clawdbot/clawdbot.json');
-    
+    const proc = await sandbox.startProcess("cat /root/.clawdbot/clawdbot.json");
+
     let attempts = 0;
     while (attempts < 10) {
-      await new Promise(r => setTimeout(r, 200));
-      if (proc.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 200));
+      if (proc.status !== "running") break;
       attempts++;
     }
 
     const logs = await proc.getLogs();
-    const stdout = logs.stdout || '';
-    const stderr = logs.stderr || '';
-    
+    const stdout = logs.stdout || "";
+    const stderr = logs.stderr || "";
+
     let config = null;
     try {
       config = JSON.parse(stdout);
     } catch {
       // Not valid JSON
     }
-    
+
     return c.json({
       status: proc.status,
       exitCode: proc.exitCode,
@@ -386,7 +408,7 @@ debug.get('/container-config', async (c) => {
       stderr,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return c.json({ error: errorMessage }, 500);
   }
 });
