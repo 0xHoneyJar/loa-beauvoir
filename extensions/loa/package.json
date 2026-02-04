@@ -1,0 +1,19 @@
+{
+  "name": "@openclaw/loa",
+  "version": "2026.2.4",
+  "description": "LOA identity, memory, and recovery integration for OpenClaw",
+  "type": "module",
+  "main": "./index.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
