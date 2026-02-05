@@ -46,6 +46,7 @@ export {
 // Scheduler Tasks
 export {
   registerBeadsSchedulerTasks,
+  registerWorkQueueTask,
   unregisterBeadsSchedulerTasks,
   getBeadsSchedulerStatus,
   type BeadsSchedulerConfig,
@@ -71,3 +72,17 @@ export {
   type MigrationResult,
   type BeadsRunStateConfig,
 } from "./beads-run-state.js";
+
+// Work Queue (Phase 5)
+export {
+  BeadsWorkQueue,
+  createBeadsWorkQueue,
+  WORK_QUEUE_LABELS,
+  DEFAULT_WORK_QUEUE_CONFIG,
+  type WorkQueueConfig,
+  type TaskClaim,
+  type SessionHandoff,
+  type StaleSessionRecoveryResult,
+  type SchedulerRegistration,
+  type ISchedulerRegistry,
+} from "./beads-work-queue.js";

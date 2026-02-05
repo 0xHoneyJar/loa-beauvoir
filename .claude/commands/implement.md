@@ -14,6 +14,12 @@ arguments:
     required: true
     description: "Sprint to implement (e.g., sprint-1)"
     examples: ["sprint-1", "sprint-2", "sprint-10"]
+  - name: "single_task"
+    type: "boolean"
+    flag: "--single-task"
+    required: false
+    default: false
+    description: "Process only one task in bounded session mode (30-min window)"
 
 agent: "implementing-tasks"
 agent_path: "skills/implementing-tasks/"
@@ -108,6 +114,7 @@ Execute assigned sprint tasks with production-quality code, comprehensive tests,
 ```
 /implement sprint-1
 /implement sprint-1 background
+/implement sprint-1 --single-task     # Process only one task in bounded session
 ```
 
 ## Agent
@@ -129,29 +136,30 @@ See: `skills/implementing-tasks/SKILL.md` for full workflow details.
 
 ## Arguments
 
-| Argument | Description | Required |
-|----------|-------------|----------|
-| `sprint_id` | Which sprint to implement (e.g., `sprint-1`) | Yes |
-| `background` | Run as subagent for parallel execution | No |
+| Argument        | Description                                                   | Required |
+| --------------- | ------------------------------------------------------------- | -------- |
+| `sprint_id`     | Which sprint to implement (e.g., `sprint-1`)                  | Yes      |
+| `background`    | Run as subagent for parallel execution                        | No       |
+| `--single-task` | Process only one task in bounded session mode (30-min window) | No       |
 
 ## Outputs
 
-| Path | Description |
-|------|-------------|
-| `grimoires/loa/a2a/{sprint_id}/reviewer.md` | Implementation report |
-| `grimoires/loa/a2a/index.md` | Updated sprint index |
-| `app/src/**/*` | Implementation code and tests |
+| Path                                        | Description                   |
+| ------------------------------------------- | ----------------------------- |
+| `grimoires/loa/a2a/{sprint_id}/reviewer.md` | Implementation report         |
+| `grimoires/loa/a2a/index.md`                | Updated sprint index          |
+| `app/src/**/*`                              | Implementation code and tests |
 
 ## Error Handling
 
-| Error | Cause | Resolution |
-|-------|-------|------------|
-| "Invalid sprint ID" | Wrong format | Use `sprint-N` format |
-| "PRD not found" | Missing prd.md | Run `/plan-and-analyze` first |
-| "SDD not found" | Missing sdd.md | Run `/architect` first |
-| "Sprint plan not found" | Missing sprint.md | Run `/sprint-plan` first |
-| "Sprint not found in sprint.md" | Sprint doesn't exist | Verify sprint number |
-| "Sprint is already COMPLETED" | COMPLETED marker exists | Move to next sprint |
+| Error                           | Cause                   | Resolution                    |
+| ------------------------------- | ----------------------- | ----------------------------- |
+| "Invalid sprint ID"             | Wrong format            | Use `sprint-N` format         |
+| "PRD not found"                 | Missing prd.md          | Run `/plan-and-analyze` first |
+| "SDD not found"                 | Missing sdd.md          | Run `/architect` first        |
+| "Sprint plan not found"         | Missing sprint.md       | Run `/sprint-plan` first      |
+| "Sprint not found in sprint.md" | Sprint doesn't exist    | Verify sprint number          |
+| "Sprint is already COMPLETED"   | COMPLETED marker exists | Move to next sprint           |
 
 ## Sprint Ledger Integration
 
@@ -205,3 +213,58 @@ When beads_rust is installed, the agent handles task lifecycle:
 **No manual `br` commands required.** The agent handles everything internally.
 
 **Protocol Reference**: See `.claude/protocols/beads-integration.md`
+
+## Single-Task Mode (`--single-task`)
+
+When the `--single-task` flag is provided, the agent operates in bounded session mode:
+
+### Behavior
+
+1. **Task Claiming**: Claims ONE ready task from BeadsWorkQueue using priority ordering
+2. **Session Tracking**: Adds `session:<uuid>` label for traceability
+3. **Bounded Execution**: Works on the single task within the 30-minute session window
+4. **Session Handoff**: Records context (files changed, progress, next steps) for continuation
+5. **Release**: Marks task as `done` or `blocked` (never leaves `in_progress` without handoff)
+
+### Work Queue Integration
+
+When single-task mode is active, the agent:
+
+```bash
+# 1. Claim next ready task (highest priority first)
+claim = workQueue.claimNextTask()
+
+# 2. Get previous session context if resuming
+previous = workQueue.getPreviousHandoff(taskId)
+
+# 3. Execute work within bounded window...
+
+# 4. Record handoff before session ends
+workQueue.recordHandoff(taskId, {
+  sessionId,
+  filesChanged,
+  currentState,
+  nextSteps,
+  tokensUsed
+})
+
+# 5. Release task with appropriate status
+workQueue.releaseTask(taskId, "done" | "blocked", reason?)
+```
+
+### Use Cases
+
+- **Token Budget Management**: Process one task per context window
+- **Parallel Agent Execution**: Multiple agents work different tasks concurrently
+- **Fault Tolerance**: Session crashes preserve handoff context
+- **Time Banking**: Scheduler allocates fixed time windows per task
+
+### Label Flow
+
+```
+TASK_READY → (claim) → TASK_IN_PROGRESS + session:<uuid>
+    → (complete) → TASK_DONE + close
+    → (blocked) → TASK_BLOCKED + handoff:<session>
+```
+
+**Protocol Reference**: See `deploy/loa-identity/beads/beads-work-queue.ts`

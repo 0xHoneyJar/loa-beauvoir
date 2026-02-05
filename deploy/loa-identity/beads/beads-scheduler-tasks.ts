@@ -12,8 +12,10 @@
 
 import { exec } from "child_process";
 import { promisify } from "util";
+import type { IBeadsRunStateManager } from "../../../.claude/lib/beads";
 import type { Scheduler } from "../scheduler/scheduler.js";
 import { validateBrCommand } from "../../../.claude/lib/beads";
+import { BeadsWorkQueue, type WorkQueueConfig } from "./beads-work-queue.js";
 
 const execAsync = promisify(exec);
 
@@ -49,6 +51,13 @@ export interface BeadsSchedulerConfig {
     jitterMs?: number;
     staleDays?: number;
   };
+  /** Work queue processing configuration (Phase 5) */
+  workQueue?: {
+    enabled?: boolean;
+    intervalMs?: number;
+    jitterMs?: number;
+    sessionTimeoutMs?: number;
+  };
   /** Path to .beads directory */
   beadsDir?: string;
   /** Command to run br */
@@ -74,6 +83,12 @@ const DEFAULT_CONFIG: Required<BeadsSchedulerConfig> = {
     intervalMs: 24 * 60 * 60 * 1000, // 24 hours
     jitterMs: 60 * 60 * 1000, // 1 hour
     staleDays: 7,
+  },
+  workQueue: {
+    enabled: false, // Off by default, requires explicit enablement
+    intervalMs: 5 * 60 * 1000, // 5 minutes (check for ready tasks)
+    jitterMs: 30 * 1000, // 30 seconds
+    sessionTimeoutMs: 30 * 60 * 1000, // 30 minute session windows
   },
   beadsDir: ".beads",
   brCommand: "br",
@@ -170,6 +185,36 @@ export function registerBeadsSchedulerTasks(
   }
 
   console.log("[beads-scheduler] Beads maintenance tasks registered");
+}
+
+/**
+ * Register work queue processing task with the scheduler (Phase 5)
+ *
+ * This task periodically checks for ready tasks and triggers agent sessions
+ * to process them in bounded time windows.
+ *
+ * @param scheduler - OpenClaw Scheduler instance
+ * @param workQueue - BeadsWorkQueue instance
+ * @param config - Optional configuration overrides
+ */
+export function registerWorkQueueTask(
+  scheduler: Scheduler,
+  workQueue: BeadsWorkQueue,
+  config?: BeadsSchedulerConfig,
+): void {
+  const cfg = mergeConfig(DEFAULT_CONFIG, config);
+
+  if (!cfg.workQueue.enabled) {
+    console.log("[beads-scheduler] Work queue task disabled");
+    return;
+  }
+
+  // Use the work queue's own register method which provides the handler
+  workQueue.register(scheduler);
+
+  console.log(
+    `[beads-scheduler] Registered beads_work_queue (interval: ${cfg.workQueue.intervalMs! / 1000}s, session timeout: ${cfg.workQueue.sessionTimeoutMs! / (60 * 1000)}min)`,
+  );
 }
 
 /**
@@ -331,6 +376,10 @@ function mergeConfig(
       ...defaults.staleCheck,
       ...overrides.staleCheck,
     },
+    workQueue: {
+      ...defaults.workQueue,
+      ...overrides.workQueue,
+    },
     beadsDir: overrides.beadsDir ?? defaults.beadsDir,
     brCommand: overrides.brCommand ?? defaults.brCommand,
   };
@@ -342,7 +391,7 @@ function mergeConfig(
  * Useful for cleanup or reconfiguration
  */
 export function unregisterBeadsSchedulerTasks(scheduler: Scheduler): void {
-  const beadsTasks = ["beads_health", "beads_sync", "beads_stale_check"];
+  const beadsTasks = ["beads_health", "beads_sync", "beads_stale_check", "beads_work_queue"];
 
   for (const taskId of beadsTasks) {
     try {
@@ -365,7 +414,7 @@ export function getBeadsSchedulerStatus(scheduler: Scheduler): Array<{
   consecutiveFailures: number;
 }> {
   const allTasks = scheduler.getStatus();
-  const beadsTasks = ["beads_health", "beads_sync", "beads_stale_check"];
+  const beadsTasks = ["beads_health", "beads_sync", "beads_stale_check", "beads_work_queue"];
 
   return allTasks
     .filter((task) => beadsTasks.includes(task.id))

@@ -37,60 +37,60 @@ This aligns with Loa's Three-Zone architecture where the State Zone (`.beads/`) 
 
 ### Issue Lifecycle
 
-| Action | Command | Notes |
-|--------|---------|-------|
-| Initialize workspace | `br init` | Creates `.beads/` directory |
-| Create issue | `br create "Title" --type <type> --priority <0-4> --json` | Returns created issue |
-| Quick capture | `br q "Title"` | Minimal creation, returns ID only |
-| Show details | `br show <id> --json` | Full issue with comments |
-| Update issue | `br update <id> --status <status> --json` | Modify any field |
-| Close issue | `br close <id> --reason "Description" --json` | Mark complete |
-| Reopen | `br reopen <id>` | Revert to open status |
-| Delete | `br delete <id>` | Tombstone (soft delete) |
+| Action               | Command                                                   | Notes                             |
+| -------------------- | --------------------------------------------------------- | --------------------------------- |
+| Initialize workspace | `br init`                                                 | Creates `.beads/` directory       |
+| Create issue         | `br create "Title" --type <type> --priority <0-4> --json` | Returns created issue             |
+| Quick capture        | `br q "Title"`                                            | Minimal creation, returns ID only |
+| Show details         | `br show <id> --json`                                     | Full issue with comments          |
+| Update issue         | `br update <id> --status <status> --json`                 | Modify any field                  |
+| Close issue          | `br close <id> --reason "Description" --json`             | Mark complete                     |
+| Reopen               | `br reopen <id>`                                          | Revert to open status             |
+| Delete               | `br delete <id>`                                          | Tombstone (soft delete)           |
 
 ### Issue Types
 
-| Type | Usage |
-|------|-------|
-| `epic` | Sprint-level container |
-| `task` | Standard work item |
-| `bug` | Defect or regression |
-| `feature` | New functionality |
+| Type      | Usage                  |
+| --------- | ---------------------- |
+| `epic`    | Sprint-level container |
+| `task`    | Standard work item     |
+| `bug`     | Defect or regression   |
+| `feature` | New functionality      |
 
 ### Priority Levels
 
-| Priority | Meaning | SLA Guidance |
-|----------|---------|--------------|
-| P0 | Critical | Drop everything |
-| P1 | High | Current sprint |
-| P2 | Medium | Soon |
-| P3 | Low | Backlog |
-| P4 | Minimal | Nice to have |
+| Priority | Meaning  | SLA Guidance    |
+| -------- | -------- | --------------- |
+| P0       | Critical | Drop everything |
+| P1       | High     | Current sprint  |
+| P2       | Medium   | Soon            |
+| P3       | Low      | Backlog         |
+| P4       | Minimal  | Nice to have    |
 
 ### Status Values
 
-| Status | Meaning |
-|--------|---------|
-| `open` | Not started |
+| Status        | Meaning          |
+| ------------- | ---------------- |
+| `open`        | Not started      |
 | `in_progress` | Actively working |
-| `closed` | Complete |
-| `deferred` | Postponed |
+| `closed`      | Complete         |
+| `deferred`    | Postponed        |
 
 ---
 
 ## Querying
 
-| Action | Command |
-|--------|---------|
-| List all issues | `br list --json` |
-| Ready work (unblocked) | `br ready --json` |
-| Blocked issues | `br blocked --json` |
-| Full-text search | `br search "query" --json` |
-| Filter by status | `br list --status open --json` |
-| Filter by priority | `br list --priority 0-1 --json` |
-| Filter by assignee | `br list --assignee "email" --json` |
-| Stale issues | `br stale --days 30 --json` |
-| Count by field | `br count --by status` |
+| Action                 | Command                             |
+| ---------------------- | ----------------------------------- |
+| List all issues        | `br list --json`                    |
+| Ready work (unblocked) | `br ready --json`                   |
+| Blocked issues         | `br blocked --json`                 |
+| Full-text search       | `br search "query" --json`          |
+| Filter by status       | `br list --status open --json`      |
+| Filter by priority     | `br list --priority 0-1 --json`     |
+| Filter by assignee     | `br list --assignee "email" --json` |
+| Stale issues           | `br stale --days 30 --json`         |
+| Count by field         | `br count --by status`              |
 
 ### Complex Queries with jq
 
@@ -112,13 +112,13 @@ br list --json | jq 'sort_by(.updated_at) | reverse | limit(10; .[])'
 
 ## Dependencies
 
-| Action | Command |
-|--------|---------|
-| Add blocker | `br dep add <blocked-id> <blocker-id>` |
-| Remove dependency | `br dep remove <blocked-id> <blocker-id>` |
-| List dependencies | `br dep list <id>` |
-| View dependency tree | `br dep tree <id>` |
-| Find circular deps | `br dep cycles` |
+| Action               | Command                                   |
+| -------------------- | ----------------------------------------- |
+| Add blocker          | `br dep add <blocked-id> <blocker-id>`    |
+| Remove dependency    | `br dep remove <blocked-id> <blocker-id>` |
+| List dependencies    | `br dep list <id>`                        |
+| View dependency tree | `br dep tree <id>`                        |
+| Find circular deps   | `br dep cycles`                           |
 
 ### Dependency Semantics
 
@@ -137,17 +137,17 @@ br dep add beads-xyz beads-abc
 
 Since beads_rust only supports blocking dependencies, use **labels** for semantic relationships:
 
-| Relationship | Label Convention | Example |
-|--------------|------------------|---------|
+| Relationship           | Label Convention                | Example                        |
+| ---------------------- | ------------------------------- | ------------------------------ |
 | Discovered during work | `discovered-during:<parent-id>` | `discovered-during:beads-a1b2` |
-| Related issue | `related-to:<id>` | `related-to:beads-c3d4` |
-| Part of epic | `epic:<epic-id>` | `epic:beads-sprint3` |
-| Sprint membership | `sprint:<n>` | `sprint:3` |
-| Needs review | `needs-review` | - |
-| Review approved | `review-approved` | - |
-| Security concern | `security` | - |
-| Security approved | `security-approved` | - |
-| Technical debt | `tech-debt` | - |
+| Related issue          | `related-to:<id>`               | `related-to:beads-c3d4`        |
+| Part of epic           | `epic:<epic-id>`                | `epic:beads-sprint3`           |
+| Sprint membership      | `sprint:<n>`                    | `sprint:3`                     |
+| Needs review           | `needs-review`                  | -                              |
+| Review approved        | `review-approved`               | -                              |
+| Security concern       | `security`                      | -                              |
+| Security approved      | `security-approved`             | -                              |
+| Technical debt         | `tech-debt`                     | -                              |
 
 ### Label Commands
 
@@ -181,6 +181,7 @@ br comments list <id>
 ```
 
 Use comments for:
+
 - Progress updates
 - Review feedback
 - Audit trail entries
@@ -207,28 +208,31 @@ Use comments for:
 
 ### Sync Commands
 
-| Command | Direction | Use Case |
-|---------|-----------|----------|
-| `br sync --flush-only` | DB → JSONL | Before git commit |
-| `br sync --import-only` | JSONL → DB | After git pull |
-| `br sync` | Bidirectional | Full reconciliation |
-| `br sync --status` | Check only | Verify state |
+| Command                 | Direction     | Use Case            |
+| ----------------------- | ------------- | ------------------- |
+| `br sync --flush-only`  | DB → JSONL    | Before git commit   |
+| `br sync --import-only` | JSONL → DB    | After git pull      |
+| `br sync`               | Bidirectional | Full reconciliation |
+| `br sync --status`      | Check only    | Verify state        |
 
 ### Sync Protocol for Loa Agents
 
 **Session Start:**
+
 ```bash
 # Always import latest state
 br sync --import-only 2>/dev/null || br init
 ```
 
 **After Write Operations:**
+
 ```bash
 # After creating/updating/closing issues
 br sync --flush-only
 ```
 
 **Before Git Commit:**
+
 ```bash
 br sync --flush-only
 git add .beads/
@@ -236,6 +240,7 @@ git commit -m "Update task graph: [summary]"
 ```
 
 **After Git Pull:**
+
 ```bash
 git pull origin main
 br sync --import-only
@@ -265,15 +270,15 @@ output:
 
 # Sync behavior
 sync:
-  auto_import: false  # Always false for beads_rust
-  auto_flush: false   # Always false for beads_rust
+  auto_import: false # Always false for beads_rust
+  auto_flush: false # Always false for beads_rust
 ```
 
 ### Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `BEADS_DB` | Override database path |
+| Variable   | Purpose                                  |
+| ---------- | ---------------------------------------- |
+| `BEADS_DB` | Override database path                   |
 | `RUST_LOG` | Logging level (debug, info, warn, error) |
 
 ---
@@ -283,16 +288,19 @@ sync:
 When task state is ambiguous or unclear:
 
 1. **State uncertainty explicitly:**
+
    ```
    "I cannot verify that issue <id> exists in the beads graph."
    ```
 
 2. **Verify with query:**
+
    ```bash
    br show <id> --json 2>/dev/null || echo "Issue not found"
    ```
 
 3. **If not found, check for similar:**
+
    ```bash
    br list --json | jq '.[] | select(.id | contains("<partial>"))'
    ```
@@ -357,18 +365,21 @@ br --version
 ## Integration with Loa Workflows
 
 ### Session Start (Hook)
+
 ```bash
 .claude/scripts/beads/install-br.sh
 br init 2>/dev/null || br sync --import-only
 ```
 
 ### `/sprint-plan`
+
 ```bash
 EPIC_ID=$(br create "Sprint N: Theme" --type epic --priority 1 --json | jq -r '.id')
 # Create tasks with epic label
 ```
 
 ### `/implement`
+
 ```bash
 br sync --import-only
 TASK=$(br ready --json | jq -r '.[0].id')
@@ -379,6 +390,7 @@ br sync --flush-only
 ```
 
 ### `/review-sprint`
+
 ```bash
 br comments add <id> "REVIEW: [feedback]"
 br label add <id> review-approved
@@ -386,6 +398,7 @@ br sync --flush-only
 ```
 
 ### Session End
+
 ```bash
 br sync --flush-only
 git add .beads/
@@ -398,14 +411,112 @@ git add .beads/
 
 beads_rust intentionally does NOT support:
 
-| Feature | Reason | Workaround |
-|---------|--------|------------|
-| Background daemon | Non-invasive philosophy | Explicit sync |
-| Auto-commit | Git safety | Manual git operations |
-| MCP server | Focused scope | CLI with `--json` |
-| Semantic compaction | Simplicity | Manual archival |
-| Linear/Jira sync | Focused scope | External integration |
-| `br prime` | Original beads feature | `loa-prime.sh` script |
+| Feature             | Reason                  | Workaround            |
+| ------------------- | ----------------------- | --------------------- |
+| Background daemon   | Non-invasive philosophy | Explicit sync         |
+| Auto-commit         | Git safety              | Manual git operations |
+| MCP server          | Focused scope           | CLI with `--json`     |
+| Semantic compaction | Simplicity              | Manual archival       |
+| Linear/Jira sync    | Focused scope           | External integration  |
+| `br prime`          | Original beads feature  | `loa-prime.sh` script |
+
+---
+
+## Work Queue Integration (Phase 5)
+
+The BeadsWorkQueue provides scheduler-driven task processing for bounded session execution.
+
+### Overview
+
+```
+┌──────────────┐     poll      ┌────────────────┐      claim      ┌─────────────┐
+│   Scheduler  │ ─────────────▶│ BeadsWorkQueue │ ────────────────▶│  Agent Run  │
+│  (cron-like) │               │  (TypeScript)  │                  │ (30-minute) │
+└──────────────┘               └────────────────┘                  └─────────────┘
+       │                              │                                   │
+       │                              │ ready→in_progress                 │
+       │                              │ session:uuid label                │
+       │                              │                                   │
+       │                              ▼                                   │
+       │                       ┌────────────────┐                         │
+       │                       │   Task Bead    │◀────────────────────────┘
+       │                       │  (br storage)  │  handoff/done/blocked
+       │                       └────────────────┘
+       │                              │
+       └──────────────────────────────┘
+              timeout recovery
+```
+
+### Label State Machine
+
+```
+TASK_READY → (claimNextTask) → TASK_IN_PROGRESS + session:<uuid>
+    → (releaseTask done) → TASK_DONE + close
+    → (releaseTask blocked) → TASK_BLOCKED + handoff:<session>
+    → (timeout) → (recover) → TASK_READY
+```
+
+### Single-Task Mode (`/implement --single-task`)
+
+When an agent runs in single-task mode:
+
+1. **Claim**: `workQueue.claimNextTask()` - gets highest priority ready task
+2. **Context**: `workQueue.getPreviousHandoff()` - load previous session state
+3. **Execute**: Work on ONE task for up to 30 minutes
+4. **Handoff**: `workQueue.recordHandoff()` - preserve state for continuation
+5. **Release**: `workQueue.releaseTask()` - mark done or blocked
+
+### Session Timeout Recovery
+
+The work queue automatically recovers stale sessions:
+
+```typescript
+// Run periodically to detect abandoned tasks
+const result = await workQueue.recoverStaleSessions();
+// { recovered: 2, failed: 0, details: [...] }
+```
+
+Tasks are recovered by:
+
+1. Removing `in_progress` label
+2. Adding `ready` label
+3. Recording stale session marker
+
+### Configuration
+
+```typescript
+const workQueue = createBeadsWorkQueue(
+  {
+    enabled: true,
+    intervalMs: 5 * 60 * 1000, // Check every 5 minutes
+    sessionTimeoutMs: 30 * 60 * 1000, // 30-minute sessions
+    circuitBreaker: {
+      maxFailures: 3,
+      resetTimeMs: 30 * 60 * 1000,
+    },
+  },
+  runStateManager,
+);
+```
+
+### TypeScript Integration
+
+```typescript
+import {
+  BeadsWorkQueue,
+  createBeadsWorkQueue,
+  WORK_QUEUE_LABELS,
+  type TaskClaim,
+  type SessionHandoff,
+} from "deploy/loa-identity/beads";
+
+// Claim and process
+const claim = await workQueue.claimNextTask();
+if (claim) {
+  // Process task...
+  await workQueue.releaseTask(claim.taskId, "done");
+}
+```
 
 ---
 
