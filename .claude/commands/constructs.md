@@ -100,40 +100,33 @@ Returns JSON array:
 ]
 ```
 
-#### Phase 2: Display Pack Table
+#### Phase 2: Display Multi-Select UI
 
-Display ALL packs in a numbered markdown table:
-
-```markdown
-## Available Packs
-
-| # | Pack | Skills | Tier | Status |
-|---|------|--------|------|--------|
-| 1 | 🔮 Observer | 6 | Free | |
-| 2 | ⚗️ Crucible | 5 | Free | |
-| 3 | 🎨 Artisan | 10 | Pro | Installed |
-| 4 | 🚀 GTM Collective | 8 | Free | |
-| 5 | 🔔 Sigil of the Beacon | 6 | Free | |
-```
-
-Then use AskUserQuestion (NOT multiSelect) for selection:
+Use AskUserQuestion with multiSelect to allow pack selection:
 
 ```json
 {
   "questions": [{
-    "question": "How would you like to install packs?",
-    "header": "Install",
-    "multiSelect": false,
+    "question": "Select packs to install:",
+    "header": "Packs",
+    "multiSelect": true,
     "options": [
-      {"label": "Enter pack numbers", "description": "Type numbers like: 1,3,5"},
-      {"label": "Install all", "description": "Install all available packs"},
-      {"label": "Cancel", "description": "Exit without installing"}
+      {
+        "label": "🔮 Observer (6 skills)",
+        "description": "User truth capture - interviews, personas, journey mapping"
+      },
+      {
+        "label": "⚗️ Crucible (5 skills)", 
+        "description": "Validation & testing - test plans, quality gates"
+      },
+      {
+        "label": "🎨 Artisan (10 skills)",
+        "description": "Brand/UI craftsmanship - design systems, components"
+      }
     ]
   }]
 }
 ```
-
-If user selects "Enter pack numbers", prompt for comma-separated input and confirm selection before installing.
 
 #### Phase 3: Install Selected Packs
 
