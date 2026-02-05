@@ -14,19 +14,16 @@ import { exec } from "child_process";
 import { statSync, existsSync } from "fs";
 import { promisify } from "util";
 import type { BeadsWALAdapter, BeadWALEntry } from "./beads-wal-adapter.js";
+import {
+  validateBeadId,
+  validateBrCommand,
+  shellEscape,
+  BEAD_ID_PATTERN,
+  ALLOWED_TYPES,
+  LABEL_PATTERN,
+} from "../../../.claude/lib/beads";
 
 const execAsync = promisify(exec);
-
-/**
- * SECURITY: Pattern for valid bead IDs (alphanumeric, underscore, hyphen only)
- * Prevents command injection and path traversal via beadId
- */
-const BEAD_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
-
-/**
- * SECURITY: Allowed bead types (whitelist)
- */
-const ALLOWED_TYPES = new Set(["task", "bug", "feature", "epic", "story", "debt", "spike"]);
 
 /**
  * SECURITY: Allowed label actions (whitelist)
@@ -80,34 +77,6 @@ export interface BeadsRecoveryConfig {
   verbose?: boolean;
   /** Skip final sync after recovery */
   skipSync?: boolean;
-}
-
-/**
- * SECURITY: Validate bead ID against safe pattern
- * @throws Error if beadId contains unsafe characters
- */
-function validateBeadId(beadId: string): void {
-  if (!beadId || typeof beadId !== "string") {
-    throw new Error("Invalid beadId: must be a non-empty string");
-  }
-  if (!BEAD_ID_PATTERN.test(beadId)) {
-    throw new Error(
-      `Invalid beadId: must match pattern ${BEAD_ID_PATTERN} (got: ${beadId.slice(0, 50)})`,
-    );
-  }
-  if (beadId.length > 128) {
-    throw new Error("Invalid beadId: exceeds maximum length of 128 characters");
-  }
-}
-
-/**
- * SECURITY: Validate brCommand is safe
- * Only allows 'br' or absolute paths to prevent arbitrary command execution
- */
-function validateBrCommand(cmd: string): void {
-  if (cmd === "br") return;
-  if (cmd.startsWith("/") && !cmd.includes(" ") && !cmd.includes(";")) return;
-  throw new Error(`Invalid brCommand: must be 'br' or an absolute path without spaces/semicolons`);
 }
 
 /**
@@ -310,7 +279,7 @@ export class BeadsRecoveryHandler {
   }
 
   private async replayCreate(payload: Record<string, unknown>): Promise<void> {
-    const title = this.escapeArg(String(payload.title ?? "Untitled"));
+    const title = shellEscape(String(payload.title ?? "Untitled"));
 
     // SECURITY: Whitelist allowed types
     const rawType = String(payload.type ?? "task");
@@ -324,7 +293,7 @@ export class BeadsRecoveryHandler {
     let cmd = `create ${title} --type ${type} --priority ${priority}`;
 
     if (payload.description) {
-      cmd += ` --description ${this.escapeArg(String(payload.description))}`;
+      cmd += ` --description ${shellEscape(String(payload.description))}`;
     }
 
     await this.execBr(cmd);
@@ -337,25 +306,25 @@ export class BeadsRecoveryHandler {
     for (const [key, value] of Object.entries(payload)) {
       if (value !== undefined && value !== null && ALLOWED_UPDATE_KEYS.has(key)) {
         // SECURITY: Escape both key (via whitelist) and value
-        updates.push(`--${key} ${this.escapeArg(String(value))}`);
+        updates.push(`--${key} ${shellEscape(String(value))}`);
       }
     }
 
     if (updates.length > 0) {
       // SECURITY: beadId already validated, escape it anyway for defense in depth
-      await this.execBr(`update ${this.escapeArg(beadId)} ${updates.join(" ")}`);
+      await this.execBr(`update ${shellEscape(beadId)} ${updates.join(" ")}`);
     }
   }
 
   private async replayClose(beadId: string, payload: Record<string, unknown>): Promise<void> {
-    const reason = payload.reason ? ` --reason ${this.escapeArg(String(payload.reason))}` : "";
+    const reason = payload.reason ? ` --reason ${shellEscape(String(payload.reason))}` : "";
     // SECURITY: Escape beadId
-    await this.execBr(`close ${this.escapeArg(beadId)}${reason}`);
+    await this.execBr(`close ${shellEscape(beadId)}${reason}`);
   }
 
   private async replayReopen(beadId: string): Promise<void> {
     // SECURITY: Escape beadId
-    await this.execBr(`reopen ${this.escapeArg(beadId)}`);
+    await this.execBr(`reopen ${shellEscape(beadId)}`);
   }
 
   private async replayLabel(beadId: string, payload: Record<string, unknown>): Promise<void> {
@@ -370,12 +339,12 @@ export class BeadsRecoveryHandler {
       const safeLabels = payload.labels
         .map((l) => String(l))
         .filter((l) => /^[a-zA-Z0-9_:-]+$/.test(l))
-        .map((l) => this.escapeArg(l));
+        .map((l) => shellEscape(l));
       escapedLabels = safeLabels.join(" ");
     } else {
       const labelStr = String(payload.labels ?? payload.label ?? "");
       if (/^[a-zA-Z0-9_:-]+$/.test(labelStr)) {
-        escapedLabels = this.escapeArg(labelStr);
+        escapedLabels = shellEscape(labelStr);
       } else {
         escapedLabels = "";
       }
@@ -383,15 +352,15 @@ export class BeadsRecoveryHandler {
 
     if (escapedLabels) {
       // SECURITY: Escape beadId
-      await this.execBr(`label ${action} ${this.escapeArg(beadId)} ${escapedLabels}`);
+      await this.execBr(`label ${action} ${shellEscape(beadId)} ${escapedLabels}`);
     }
   }
 
   private async replayComment(beadId: string, payload: Record<string, unknown>): Promise<void> {
-    const text = this.escapeArg(String(payload.text ?? ""));
+    const text = shellEscape(String(payload.text ?? ""));
     if (text && text !== "''") {
       // SECURITY: Escape beadId
-      await this.execBr(`comments add ${this.escapeArg(beadId)} ${text}`);
+      await this.execBr(`comments add ${shellEscape(beadId)} ${text}`);
     }
   }
 
@@ -407,7 +376,7 @@ export class BeadsRecoveryHandler {
       // SECURITY: Validate target is a valid beadId
       if (BEAD_ID_PATTERN.test(targetStr)) {
         // SECURITY: Escape both beadId and target
-        await this.execBr(`dep ${action} ${this.escapeArg(beadId)} ${this.escapeArg(targetStr)}`);
+        await this.execBr(`dep ${action} ${shellEscape(beadId)} ${shellEscape(targetStr)}`);
       }
     }
   }
@@ -439,15 +408,6 @@ export class BeadsRecoveryHandler {
       // SECURITY: Don't expose command details in error
       throw new Error("br command execution failed");
     }
-  }
-
-  /**
-   * Escape argument for shell execution
-   * Uses single-quote escaping which is safe for all content
-   */
-  private escapeArg(arg: string): string {
-    // Escape single quotes and wrap in single quotes
-    return `'${arg.replace(/'/g, "'\\''")}'`;
   }
 
   /**
