@@ -13,22 +13,9 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import type { Scheduler } from "../scheduler/scheduler.js";
+import { validateBrCommand } from "../../../.claude/lib/beads";
 
 const execAsync = promisify(exec);
-
-/**
- * SECURITY: Validate brCommand is safe
- * Only allows 'br' or absolute paths to prevent arbitrary command execution
- * @throws Error if brCommand contains unsafe characters
- */
-function validateBrCommand(cmd: string): void {
-  if (cmd === "br") return;
-  // Allow absolute paths without spaces, semicolons, or other shell metacharacters
-  if (cmd.startsWith("/") && /^[a-zA-Z0-9/_.-]+$/.test(cmd)) return;
-  throw new Error(
-    "Invalid brCommand: must be 'br' or an absolute path without shell metacharacters",
-  );
-}
 
 /**
  * SECURITY: Validate staleDays is a safe integer
