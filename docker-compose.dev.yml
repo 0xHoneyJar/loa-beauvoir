@@ -54,6 +54,11 @@ services:
       NODE_OPTIONS: "--max-old-space-size=4096"
       # Default dev token (override via .env.local for custom token)
       CLAWDBOT_GATEWAY_TOKEN: ${CLAWDBOT_GATEWAY_TOKEN:-loa-dev-token-local}
+      # Deferred tool loading (beads_rust, ck-search) - starts after N seconds
+      # Set to allow first agent exchange before background installs begin
+      LOA_TOOL_DELAY_SECONDS: "15"
+      # Set to "false" to disable deferred tool loading entirely
+      LOA_DEFERRED_TOOLS: "true"
 
     # Port mappings
     ports:

@@ -101,6 +101,40 @@ if [ "${BEAUVOIR_DEV_MODE:-0}" = "1" ]; then
     ) &
 fi
 
+# =============================================================================
+# DEFERRED TOOL LOADING
+# Install Rust toolchain and beads_rust after first exchange (non-blocking)
+# =============================================================================
+
+start_deferred_tools() {
+    # Wait for gateway to be ready and first agent exchange to occur
+    # This ensures the agent is working before we start background installs
+    local DELAY_SECONDS="${LOA_TOOL_DELAY_SECONDS:-15}"
+    echo "[loa-dev] Tool loader will start in ${DELAY_SECONDS}s (after first exchange)..."
+    sleep "$DELAY_SECONDS"
+
+    # Check current tool status
+    echo "[loa-dev] Checking tool status..."
+    command -v /root/.cargo/bin/br &>/dev/null && echo "[loa-dev]   beads_rust: installed" || echo "[loa-dev]   beads_rust: pending"
+    command -v /root/.cargo/bin/ck &>/dev/null && echo "[loa-dev]   ck-search: installed" || echo "[loa-dev]   ck-search: pending"
+
+    # Run tool loader if tsx is available
+    if command -v tsx &>/dev/null; then
+        echo "[loa-dev] Starting deferred tool installation..."
+        tsx /workspace/deploy/loa-identity/tool-loader/tool-loader.ts
+        echo "[loa-dev] Tool loader complete"
+    else
+        echo "[loa-dev] WARNING: tsx not found, skipping tool loader"
+    fi
+}
+
+# Start deferred tools in background (won't block gateway startup)
+start_deferred_tools &
+TOOL_LOADER_PID=$!
+echo "[loa-dev] Tool loader scheduled (PID: $TOOL_LOADER_PID)"
+
+# =============================================================================
+
 # Check if entr is available
 if ! command -v entr &>/dev/null; then
     echo "[loa-dev] WARNING: entr not installed, running without hot-reload"
