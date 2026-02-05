@@ -4,20 +4,25 @@
 
 Display current run state and progress. Shows run details, cycle progress, metrics, and circuit breaker status.
 
+**Primary data source**: BeadsRunStateManager (Phase 4+)
+**Fallback**: .run/ state files (legacy, deprecated)
+
 ## Usage
 
 ```
 /run-status
 /run-status --json
 /run-status --verbose
+/run-status --legacy        # Force .run/ files only (deprecated)
 ```
 
 ## Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--json` | Output as JSON | false |
-| `--verbose` | Show detailed breakdown | false |
+| Option      | Description                       | Default |
+| ----------- | --------------------------------- | ------- |
+| `--json`    | Output as JSON                    | false   |
+| `--verbose` | Show detailed breakdown           | false   |
+| `--legacy`  | Use .run/ files only (deprecated) | false   |
 
 ## Output
 
@@ -27,39 +32,59 @@ Display current run state and progress. Shows run details, cycle progress, metri
 ╔══════════════════════════════════════════════════════════════╗
 ║                    RUN MODE STATUS                            ║
 ╠══════════════════════════════════════════════════════════════╣
-║ Run ID:    run-20260119-abc123                                ║
 ║ State:     RUNNING                                            ║
-║ Target:    sprint-3                                           ║
+║ Source:    beads (unified)                                    ║
 ║ Branch:    feature/sprint-3                                   ║
 ╠══════════════════════════════════════════════════════════════╣
-║ PROGRESS                                                      ║
+║ SPRINT PROGRESS                                               ║
 ║ ─────────────────────────────────────────────────────────────║
-║ Cycle:     3 / 20                                             ║
-║ Phase:     REVIEW                                             ║
-║ Runtime:   1h 23m / 8h 00m                                    ║
-╠══════════════════════════════════════════════════════════════╣
-║ METRICS                                                       ║
-║ ─────────────────────────────────────────────────────────────║
-║ Files changed:   15                                           ║
-║ Files deleted:   2                                            ║
-║ Commits:         3                                            ║
-║ Findings fixed:  7                                            ║
+║ [✓] Sprint 1  (3/3 tasks)                                     ║
+║ [→] Sprint 2  (1/5 tasks, in_progress)                        ║
+║ [ ] Sprint 3  (0/4 tasks, pending)                            ║
+║                                                               ║
+║ Progress: 1/3 sprints (33%)                                   ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ CIRCUIT BREAKER: CLOSED                                       ║
-║ ─────────────────────────────────────────────────────────────║
-║ Same issue:      1/3                                          ║
-║ No progress:     0/5                                          ║
-║ Cycle count:     3/20                                         ║
-║ Timeout:         1h 23m / 8h 00m                              ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
 ## Implementation
 
-### Check State Files
+### Primary: BeadsRunStateManager Query
+
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
+
+async function checkRunStatusBeads() {
+  const manager = createBeadsRunStateManager();
+
+  // Get run state
+  const state = await manager.getRunState();
+
+  if (state === "READY") {
+    console.log("No run in progress.");
+    console.log("");
+    console.log("Start a new run with:");
+    console.log("  /run sprint-N");
+    console.log("  /run sprint-plan");
+    return;
+  }
+
+  // Get sprint plan
+  const sprints = await manager.getSprintPlan();
+
+  // Get circuit breakers
+  const circuitBreakers = await manager.getActiveCircuitBreakers();
+
+  // Display status
+  displayStatus(state, sprints, circuitBreakers);
+}
+```
+
+### Fallback: Legacy .run/ Files (Deprecated)
 
 ```bash
-check_run_status() {
+check_run_status_legacy() {
   local state_file=".run/state.json"
   local cb_file=".run/circuit-breaker.json"
 
@@ -73,7 +98,11 @@ check_run_status() {
     return 0
   fi
 
-  # Load state
+  # DEPRECATED: Load state from files
+  echo "[DEPRECATION WARNING] Using legacy .run/ files. Migrate to beads with:"
+  echo "  BeadsRunStateManager.migrateFromDotRun('.run')"
+  echo ""
+
   local run_id=$(jq -r '.run_id' "$state_file")
   local state=$(jq -r '.state' "$state_file")
   local target=$(jq -r '.target' "$state_file")
@@ -101,137 +130,146 @@ check_run_status() {
   local findings_fixed=$(jq '.metrics.findings_fixed' "$state_file")
 
   # Display status
-  display_status
+  display_status_legacy
 }
 ```
 
-### Calculate Runtime
+### State Query Logic
 
-```bash
-calculate_runtime() {
-  local started="$1"
-  local started_seconds=$(date -d "$started" +%s)
-  local now_seconds=$(date +%s)
-  local elapsed=$((now_seconds - started_seconds))
+The BeadsRunStateManager determines state by querying beads labels:
 
-  local hours=$((elapsed / 3600))
-  local minutes=$(((elapsed % 3600) / 60))
+| State    | Query                                | Condition                     |
+| -------- | ------------------------------------ | ----------------------------- |
+| READY    | `br list --label run:current`        | Returns empty                 |
+| RUNNING  | `br list --label sprint:in_progress` | Returns sprint bead           |
+| HALTED   | `br list --label circuit-breaker`    | Run has circuit-breaker label |
+| COMPLETE | `br list --label sprint:pending`     | No pending sprints            |
 
-  echo "${hours}h ${minutes}m"
-}
-```
+### Display Status (Unified)
 
-### Format Timeout
+```typescript
+function displayStatus(
+  state: RunState,
+  sprints: SprintState[],
+  circuitBreakers: CircuitBreakerRecord[],
+) {
+  const width = 60;
 
-```bash
-format_timeout() {
-  local hours="$1"
-  echo "${hours}h 00m"
-}
-```
+  // Header
+  console.log(boxTop(width));
+  console.log(boxCenter("RUN MODE STATUS", width));
+  console.log(boxSeparator(width));
 
-### Display Status
+  // State info
+  console.log(boxLine(`State:     ${state}`, width));
+  console.log(boxLine(`Source:    beads (unified)`, width));
+  console.log(boxLine(`Branch:    ${getCurrentBranch()}`, width));
 
-```bash
-display_status() {
-  local width=60
+  // Sprint progress
+  console.log(boxSeparator(width));
+  console.log(boxCenter("SPRINT PROGRESS", width));
+  console.log(boxLineThin(width));
 
-  # Header
-  echo "$(box_top $width)"
-  echo "$(box_center 'RUN MODE STATUS' $width)"
-  echo "$(box_separator $width)"
+  let completed = 0;
+  for (const sprint of sprints) {
+    const status =
+      sprint.status === "completed"
+        ? "✓"
+        : sprint.status === "in_progress"
+          ? "→"
+          : sprint.status === "halted"
+            ? "!"
+            : " ";
+    const taskInfo = `(${sprint.tasksCompleted}/${sprint.tasksTotal} tasks${sprint.status !== "pending" ? ", " + sprint.status : ""})`;
+    console.log(boxLine(`[${status}] Sprint ${sprint.sprintNumber}  ${taskInfo}`, width));
+    if (sprint.status === "completed") completed++;
+  }
 
-  # Run info
-  echo "$(box_line "Run ID:    $run_id" $width)"
-  echo "$(box_line "State:     $state" $width)"
-  echo "$(box_line "Target:    $target" $width)"
-  echo "$(box_line "Branch:    $branch" $width)"
+  console.log(boxLine("", width));
+  const progress = sprints.length > 0 ? Math.round((completed / sprints.length) * 100) : 0;
+  console.log(boxLine(`Progress: ${completed}/${sprints.length} sprints (${progress}%)`, width));
 
-  echo "$(box_separator $width)"
-  echo "$(box_center 'PROGRESS' $width)"
-  echo "$(box_line_thin $width)"
+  // Circuit breaker
+  console.log(boxSeparator(width));
+  const cbState = circuitBreakers.length > 0 ? "OPEN" : "CLOSED";
+  console.log(boxCenter(`CIRCUIT BREAKER: ${cbState}`, width));
 
-  echo "$(box_line "Cycle:     $current_cycle / $cycle_limit" $width)"
-  echo "$(box_line "Phase:     $phase" $width)"
-  echo "$(box_line "Runtime:   $runtime / $(format_timeout $timeout_hours)" $width)"
+  if (circuitBreakers.length > 0) {
+    console.log(boxLineThin(width));
+    for (const cb of circuitBreakers) {
+      console.log(boxLine(`Sprint: ${cb.sprintId}`, width));
+      console.log(boxLine(`Reason: ${cb.reason}`, width));
+      console.log(boxLine(`Failures: ${cb.failureCount}`, width));
+    }
+  }
 
-  echo "$(box_separator $width)"
-  echo "$(box_center 'METRICS' $width)"
-  echo "$(box_line_thin $width)"
-
-  echo "$(box_line "Files changed:   $files_changed" $width)"
-  echo "$(box_line "Files deleted:   $files_deleted" $width)"
-  echo "$(box_line "Commits:         $commits" $width)"
-  echo "$(box_line "Findings fixed:  $findings_fixed" $width)"
-
-  echo "$(box_separator $width)"
-  echo "$(box_center "CIRCUIT BREAKER: $cb_state" $width)"
-  echo "$(box_line_thin $width)"
-
-  echo "$(box_line "Same issue:      $same_issue/$same_threshold" $width)"
-  echo "$(box_line "No progress:     $no_progress/$no_progress_threshold" $width)"
-  echo "$(box_line "Cycle count:     $current_cycle/$cycle_limit" $width)"
-  echo "$(box_line "Timeout:         $runtime / $(format_timeout $timeout_hours)" $width)"
-
-  echo "$(box_bottom $width)"
+  console.log(boxBottom(width));
 }
 ```
 
 ### JSON Output
 
-```bash
-output_json() {
-  local state_file=".run/state.json"
-  local cb_file=".run/circuit-breaker.json"
+```typescript
+async function outputJson() {
+  const manager = createBeadsRunStateManager();
 
-  if [[ ! -f "$state_file" ]]; then
-    echo '{"status": "no_run_in_progress"}'
-    return
-  fi
+  const state = await manager.getRunState();
+  const sprints = await manager.getSprintPlan();
+  const circuitBreakers = await manager.getActiveCircuitBreakers();
+  const currentSprint = await manager.getCurrentSprint();
 
-  jq -s '
-    {
-      "run": .[0],
-      "circuit_breaker": .[1],
-      "computed": {
-        "runtime_seconds": (now - (.[0].timestamps.started | fromdateiso8601)),
-        "timeout_remaining_seconds": ((.[0].options.timeout_hours * 3600) - (now - (.[0].timestamps.started | fromdateiso8601)))
-      }
-    }
-  ' "$state_file" "$cb_file"
+  const output = {
+    source: "beads",
+    state,
+    currentSprint,
+    sprints,
+    circuitBreakers,
+    computed: {
+      sprintsCompleted: sprints.filter((s) => s.status === "completed").length,
+      sprintsTotal: sprints.length,
+      activeCircuitBreakers: circuitBreakers.length,
+    },
+  };
+
+  console.log(JSON.stringify(output, null, 2));
 }
 ```
 
 ### Verbose Output
 
-```bash
-output_verbose() {
-  check_run_status
+```typescript
+async function outputVerbose() {
+  const manager = createBeadsRunStateManager();
 
-  if [[ -f ".run/state.json" ]]; then
-    echo ""
-    echo "=== Cycle History ==="
-    jq -r '.cycles.history[] | "Cycle \(.cycle): \(.phase) - \(.findings) findings, \(.files_changed) files"' .run/state.json
+  // Standard status
+  await checkRunStatusBeads();
 
-    echo ""
-    echo "=== Circuit Breaker History ==="
-    if [[ -f ".run/circuit-breaker.json" ]]; then
-      local history_count=$(jq '.history | length' .run/circuit-breaker.json)
-      if [[ $history_count -gt 0 ]]; then
-        jq -r '.history[] | "[\(.timestamp)] \(.trigger): \(.reason)"' .run/circuit-breaker.json
-      else
-        echo "No circuit breaker trips"
-      fi
-    fi
+  const state = await manager.getRunState();
+  if (state === "READY") return;
 
-    echo ""
-    echo "=== Deleted Files ==="
-    if [[ -f ".run/deleted-files.log" && -s ".run/deleted-files.log" ]]; then
-      cat .run/deleted-files.log
-    else
-      echo "No files deleted"
-    fi
-  fi
+  // Sprint details
+  console.log("");
+  console.log("=== Sprint Details ===");
+  const sprints = await manager.getSprintPlan();
+  for (const sprint of sprints) {
+    console.log(`Sprint ${sprint.sprintNumber}: ${sprint.status}`);
+    console.log(`  Tasks: ${sprint.tasksCompleted}/${sprint.tasksTotal}`);
+    if (sprint.currentTaskId) {
+      console.log(`  Current: ${sprint.currentTaskId}`);
+    }
+  }
+
+  // Circuit breaker history
+  console.log("");
+  console.log("=== Circuit Breaker History ===");
+  const cbs = await manager.getActiveCircuitBreakers();
+  if (cbs.length === 0) {
+    console.log("No circuit breaker trips");
+  } else {
+    for (const cb of cbs) {
+      console.log(`[${cb.createdAt}] ${cb.reason} (${cb.failureCount}x)`);
+    }
+  }
 }
 ```
 
@@ -255,52 +293,65 @@ When running a sprint plan, additional info is shown:
 ╔══════════════════════════════════════════════════════════════╗
 ║                 RUN MODE STATUS (Sprint Plan)                 ║
 ╠══════════════════════════════════════════════════════════════╣
-║ Plan ID:   plan-20260119-abc123                               ║
 ║ State:     RUNNING                                            ║
+║ Source:    beads (unified)                                    ║
 ║ Branch:    feature/release                                    ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ SPRINT PROGRESS                                               ║
 ║ ─────────────────────────────────────────────────────────────║
-║ [✓] sprint-1  (2 cycles)                                      ║
-║ [✓] sprint-2  (3 cycles)                                      ║
-║ [→] sprint-3  (cycle 1, REVIEW)                               ║
-║ [ ] sprint-4                                                  ║
+║ [✓] Sprint 1  (3/3 tasks)                                     ║
+║ [✓] Sprint 2  (5/5 tasks)                                     ║
+║ [→] Sprint 3  (2/4 tasks, in_progress)                        ║
+║ [ ] Sprint 4  (0/3 tasks, pending)                            ║
 ║                                                               ║
 ║ Progress: 2/4 sprints (50%)                                   ║
 ╠══════════════════════════════════════════════════════════════╣
-║ TOTAL METRICS                                                 ║
-║ ─────────────────────────────────────────────────────────────║
-║ Total cycles:      6                                          ║
-║ Files changed:     26                                         ║
-║ Findings fixed:    8                                          ║
+║ CIRCUIT BREAKER: CLOSED                                       ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
 ## State Indicators
 
-| State | Display | Meaning |
-|-------|---------|---------|
-| JACK_IN | Initializing | Pre-flight checks in progress |
-| RUNNING | Running | Active execution |
-| HALTED | HALTED | Circuit breaker tripped |
-| COMPLETE | Complete | All checks passed |
-| JACKED_OUT | Finished | PR created, run ended |
+| State    | Display  | Meaning                 |
+| -------- | -------- | ----------------------- |
+| READY    | No run   | No active run           |
+| RUNNING  | Running  | Active execution        |
+| HALTED   | HALTED   | Circuit breaker tripped |
+| COMPLETE | Complete | All sprints completed   |
 
-## Phase Indicators
+## Sprint Status Indicators
 
-| Phase | Display | Meaning |
-|-------|---------|---------|
-| INIT | Initializing | Setup in progress |
-| IMPLEMENT | Implementing | Code implementation |
-| REVIEW | In Review | Senior lead review |
-| AUDIT | In Audit | Security audit |
+| Status      | Icon    | Meaning                    |
+| ----------- | ------- | -------------------------- |
+| completed   | ✓       | Sprint finished            |
+| in_progress | →       | Currently executing        |
+| halted      | !       | Stopped by circuit breaker |
+| pending     | (space) | Not yet started            |
 
 ## Circuit Breaker States
 
-| State | Display | Meaning |
-|-------|---------|---------|
-| CLOSED | CLOSED | Normal operation |
-| OPEN | OPEN | Halted, manual intervention needed |
+| State  | Display | Meaning                               |
+| ------ | ------- | ------------------------------------- |
+| CLOSED | CLOSED  | Normal operation (no active breakers) |
+| OPEN   | OPEN    | Halted, manual intervention needed    |
+
+## Migration from .run/ Files
+
+To migrate existing state:
+
+```typescript
+const manager = createBeadsRunStateManager();
+const result = await manager.migrateFromDotRun(".run");
+
+console.log(`Migrated ${result.migratedSprints} sprints`);
+console.log(`Migrated ${result.migratedTasks} tasks`);
+if (result.circuitBreakersCreated > 0) {
+  console.log(`Created ${result.circuitBreakersCreated} circuit breakers`);
+}
+if (result.warnings.length > 0) {
+  console.log("Warnings:", result.warnings);
+}
+```
 
 ## Example Usage
 
@@ -312,7 +363,10 @@ When running a sprint plan, additional info is shown:
 /run-status --verbose
 
 # For scripting
-/run-status --json | jq '.run.state'
+/run-status --json | jq '.state'
+
+# Legacy mode (deprecated)
+/run-status --legacy
 ```
 
 ## Related
@@ -320,3 +374,4 @@ When running a sprint plan, additional info is shown:
 - `/run sprint-N` - Start a run
 - `/run-halt` - Stop execution
 - `/run-resume` - Continue from halt
+- `BeadsRunStateManager` - TypeScript API for state management

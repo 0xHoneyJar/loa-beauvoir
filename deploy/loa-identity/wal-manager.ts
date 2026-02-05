@@ -13,19 +13,19 @@
  *   2. Max data loss: 30 seconds
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
-import type { WALEntry, WALCheckpoint, SyncStatus } from './types';
+import * as crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
+import type { WALEntry, WALCheckpoint, SyncStatus } from "./types";
 
 // =============================================================================
 // Configuration
 // =============================================================================
 
-const WAL_DIR = process.env.WAL_DIR || '/data/wal';
-const GRIMOIRES_DIR = process.env.GRIMOIRES_DIR || '/workspace/grimoires';
-const BEADS_DIR = process.env.BEADS_DIR || '/workspace/.beads';
-const R2_MOUNT = process.env.R2_MOUNT || '/data/moltbot';
+const WAL_DIR = process.env.WAL_DIR || "/data/wal";
+const GRIMOIRES_DIR = process.env.GRIMOIRES_DIR || "/workspace/grimoires";
+const BEADS_DIR = process.env.BEADS_DIR || "/workspace/.beads";
+const R2_MOUNT = process.env.R2_MOUNT || "/data/moltbot";
 
 const R2_SYNC_INTERVAL_MS = 30_000; // 30 seconds
 const GIT_SYNC_INTERVAL_MS = 3600_000; // 1 hour
@@ -44,7 +44,7 @@ export class WALManager {
 
   constructor(walDir: string = WAL_DIR) {
     this.walDir = walDir;
-    this.currentWalFile = path.join(walDir, 'current.wal');
+    this.currentWalFile = path.join(walDir, "current.wal");
     this.checkpoint = this.loadCheckpoint();
   }
 
@@ -70,9 +70,9 @@ export class WALManager {
    * Load checkpoint from disk
    */
   private loadCheckpoint(): WALCheckpoint {
-    const checkpointPath = path.join(this.walDir, 'checkpoint.json');
+    const checkpointPath = path.join(this.walDir, "checkpoint.json");
     try {
-      const data = fs.readFileSync(checkpointPath, 'utf8');
+      const data = fs.readFileSync(checkpointPath, "utf8");
       return JSON.parse(data);
     } catch {
       return {
@@ -88,7 +88,7 @@ export class WALManager {
    * Save checkpoint to disk
    */
   private async saveCheckpoint(): Promise<void> {
-    const checkpointPath = path.join(this.walDir, 'checkpoint.json');
+    const checkpointPath = path.join(this.walDir, "checkpoint.json");
     const tempPath = `${checkpointPath}.tmp`;
 
     await fs.promises.writeFile(tempPath, JSON.stringify(this.checkpoint, null, 2));
@@ -109,10 +109,10 @@ export class WALManager {
     const entry: WALEntry = {
       ts: Date.now(),
       seq: this.seq++,
-      op: 'write',
+      op: "write",
       path: relativePath,
       checksum,
-      data: contentBuffer.toString('base64'),
+      data: contentBuffer.toString("base64"),
     };
 
     // 1. Append to WAL (atomic via temp file + rename)
@@ -137,7 +137,7 @@ export class WALManager {
     const entry: WALEntry = {
       ts: Date.now(),
       seq: this.seq++,
-      op: 'delete',
+      op: "delete",
       path: relativePath,
     };
 
@@ -159,7 +159,7 @@ export class WALManager {
     const entry: WALEntry = {
       ts: Date.now(),
       seq: this.seq++,
-      op: 'mkdir',
+      op: "mkdir",
       path: relativePath,
     };
 
@@ -182,13 +182,13 @@ export class WALManager {
    * Append an entry to the WAL file (atomic)
    */
   private async appendEntry(entry: WALEntry): Promise<void> {
-    const line = JSON.stringify(entry) + '\n';
+    const line = JSON.stringify(entry) + "\n";
     const tempFile = `${this.currentWalFile}.tmp`;
 
     // Read existing WAL
-    let existing = '';
+    let existing = "";
     try {
-      existing = await fs.promises.readFile(this.currentWalFile, 'utf8');
+      existing = await fs.promises.readFile(this.currentWalFile, "utf8");
     } catch {
       // File doesn't exist yet
     }
@@ -203,9 +203,9 @@ export class WALManager {
    */
   async readAllEntries(): Promise<WALEntry[]> {
     try {
-      const data = await fs.promises.readFile(this.currentWalFile, 'utf8');
+      const data = await fs.promises.readFile(this.currentWalFile, "utf8");
       return data
-        .split('\n')
+        .split("\n")
         .filter((line) => line.trim())
         .map((line) => JSON.parse(line) as WALEntry);
     } catch {
@@ -237,7 +237,7 @@ export class WALManager {
    * Replay WAL entries to restore state
    */
   async replay(): Promise<number> {
-    console.log('[wal] Replaying WAL entries...');
+    console.log("[wal] Replaying WAL entries...");
 
     const entries = await this.readAllEntries();
     const sorted = entries.sort((a, b) => a.seq - b.seq);
@@ -245,9 +245,9 @@ export class WALManager {
     let replayed = 0;
     for (const entry of sorted) {
       try {
-        if (entry.op === 'write' && entry.data) {
+        if (entry.op === "write" && entry.data) {
           // Verify checksum before replay
-          const content = Buffer.from(entry.data, 'base64');
+          const content = Buffer.from(entry.data, "base64");
           const checksum = this.computeChecksum(content);
 
           if (entry.checksum && checksum !== entry.checksum) {
@@ -259,11 +259,11 @@ export class WALManager {
           await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
           await fs.promises.writeFile(fullPath, content);
           replayed++;
-        } else if (entry.op === 'delete') {
+        } else if (entry.op === "delete") {
           const fullPath = this.resolveFullPath(entry.path);
           await fs.promises.unlink(fullPath).catch(() => {});
           replayed++;
-        } else if (entry.op === 'mkdir') {
+        } else if (entry.op === "mkdir") {
           const fullPath = this.resolveFullPath(entry.path);
           await fs.promises.mkdir(fullPath, { recursive: true });
           replayed++;
@@ -302,14 +302,14 @@ export class WALManager {
       try {
         const r2Path = path.join(R2_MOUNT, entry.path);
 
-        if (entry.op === 'write' && entry.data) {
+        if (entry.op === "write" && entry.data) {
           await fs.promises.mkdir(path.dirname(r2Path), { recursive: true });
-          await fs.promises.writeFile(r2Path, Buffer.from(entry.data, 'base64'));
+          await fs.promises.writeFile(r2Path, Buffer.from(entry.data, "base64"));
           synced++;
-        } else if (entry.op === 'delete') {
+        } else if (entry.op === "delete") {
           await fs.promises.unlink(r2Path).catch(() => {});
           synced++;
-        } else if (entry.op === 'mkdir') {
+        } else if (entry.op === "mkdir") {
           await fs.promises.mkdir(r2Path, { recursive: true });
           synced++;
         }
@@ -330,10 +330,7 @@ export class WALManager {
 
     // Write sync timestamp to R2
     try {
-      await fs.promises.writeFile(
-        path.join(R2_MOUNT, '.last-sync'),
-        new Date().toISOString()
-      );
+      await fs.promises.writeFile(path.join(R2_MOUNT, ".last-sync"), new Date().toISOString());
     } catch {
       // R2 might not be mounted
     }
@@ -352,7 +349,7 @@ export class WALManager {
       try {
         await this.syncToR2();
       } catch (err) {
-        console.error('[wal] R2 sync error:', err);
+        console.error("[wal] R2 sync error:", err);
       }
     }, R2_SYNC_INTERVAL_MS);
 
@@ -379,23 +376,23 @@ export class WALManager {
   async syncToGit(): Promise<boolean> {
     const entries = await this.getUnsyncedGitEntries();
     if (entries.length === 0) {
-      console.log('[wal] No changes to sync to git');
+      console.log("[wal] No changes to sync to git");
       return false;
     }
 
     console.log(`[wal] Syncing ${entries.length} changes to git...`);
 
     try {
-      const { execSync } = await import('child_process');
-      const cwd = '/workspace';
+      const { execSync } = await import("child_process");
+      const cwd = "/workspace";
 
       // Stage grimoires and .beads
-      execSync('git add grimoires/ .beads/ 2>/dev/null || true', { cwd });
+      execSync("git add grimoires/ .beads/ 2>/dev/null || true", { cwd });
 
       // Check if there are changes to commit
-      const status = execSync('git status --porcelain grimoires/ .beads/', { cwd }).toString();
+      const status = execSync("git status --porcelain grimoires/ .beads/", { cwd }).toString();
       if (!status.trim()) {
-        console.log('[wal] No git changes to commit');
+        console.log("[wal] No git changes to commit");
         return false;
       }
 
@@ -406,17 +403,17 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
       execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd });
 
       // Push
-      execSync('git push', { cwd });
+      execSync("git push", { cwd });
 
       // Update checkpoint
       this.checkpoint.last_git_seq = entries[entries.length - 1].seq;
       this.checkpoint.last_git_sync = new Date().toISOString();
       await this.saveCheckpoint();
 
-      console.log('[wal] Git sync complete');
+      console.log("[wal] Git sync complete");
       return true;
     } catch (err) {
-      console.error('[wal] Git sync error:', err);
+      console.error("[wal] Git sync error:", err);
       return false;
     }
   }
@@ -431,7 +428,7 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
       try {
         await this.syncToGit();
       } catch (err) {
-        console.error('[wal] Git sync error:', err);
+        console.error("[wal] Git sync error:", err);
       }
     }, GIT_SYNC_INTERVAL_MS);
 
@@ -473,7 +470,8 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
       wal: {
         entries_pending_r2: pendingR2,
         entries_pending_git: pendingGit,
-        last_write: entries.length > 0 ? new Date(entries[entries.length - 1].ts).toISOString() : null,
+        last_write:
+          entries.length > 0 ? new Date(entries[entries.length - 1].ts).toISOString() : null,
       },
       r2: {
         connected: r2Connected,
@@ -496,7 +494,7 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
    * Compute SHA-256 checksum of content
    */
   private computeChecksum(content: Buffer): string {
-    return 'sha256:' + crypto.createHash('sha256').update(content).digest('hex');
+    return "sha256:" + crypto.createHash("sha256").update(content).digest("hex");
   }
 
   /**
@@ -505,21 +503,25 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
    */
   private resolveFullPath(relativePath: string): string {
     // Security: Defense-in-depth guard against path traversal
-    if (relativePath.includes('..')) {
+    if (relativePath.includes("..")) {
       throw new Error(`Invalid path: traversal not allowed (${relativePath})`);
     }
 
-    if (relativePath.startsWith('.beads/')) {
-      return path.join(BEADS_DIR, relativePath.replace('.beads/', ''));
+    // Read from process.env at call time to support test overrides
+    const grimoiresDir = process.env.GRIMOIRES_DIR || GRIMOIRES_DIR;
+    const beadsDir = process.env.BEADS_DIR || BEADS_DIR;
+
+    if (relativePath.startsWith(".beads/")) {
+      return path.join(beadsDir, relativePath.replace(".beads/", ""));
     }
-    return path.join(GRIMOIRES_DIR, relativePath);
+    return path.join(grimoiresDir, relativePath);
   }
 
   /**
    * Shutdown - flush and stop timers
    */
   async shutdown(): Promise<void> {
-    console.log('[wal] Shutting down...');
+    console.log("[wal] Shutting down...");
 
     this.stopR2Sync();
     this.stopGitSync();
@@ -528,7 +530,7 @@ Co-Authored-By: Loa Framework <noreply@loa.dev>`;
     await this.syncToR2();
     await this.syncToGit();
 
-    console.log('[wal] Shutdown complete');
+    console.log("[wal] Shutdown complete");
   }
 }
 

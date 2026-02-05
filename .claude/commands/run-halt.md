@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Gracefully stop a running run. Completes current phase, commits state, pushes to branch, and creates draft PR marked as incomplete.
+Gracefully stop a running run. Creates circuit breaker bead, commits state, pushes to branch, and creates draft PR marked as incomplete.
+
+**Primary data source**: BeadsRunStateManager (Phase 4+)
+**Fallback**: .run/ state files (legacy, deprecated)
 
 ## Usage
 
@@ -10,20 +13,57 @@ Gracefully stop a running run. Completes current phase, commits state, pushes to
 /run-halt
 /run-halt --force
 /run-halt --reason "Need to review approach"
+/run-halt --legacy        # Force .run/ files only (deprecated)
 ```
 
 ## Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--force` | Stop immediately without completing phase | false |
-| `--reason "..."` | Reason for halt (included in PR) | "Manual halt" |
+| Option           | Description                                   | Default       |
+| ---------------- | --------------------------------------------- | ------------- |
+| `--force`        | Stop immediately without completing phase     | false         |
+| `--reason "..."` | Reason for halt (included in circuit breaker) | "Manual halt" |
+| `--legacy`       | Use .run/ files only (deprecated)             | false         |
 
 ## Pre-flight Checks
 
+### Primary: BeadsRunStateManager
+
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
+
+async function preflightHalt() {
+  const manager = createBeadsRunStateManager();
+  const state = await manager.getRunState();
+
+  if (state === "READY") {
+    console.log("ERROR: No run in progress");
+    console.log("Nothing to halt.");
+    process.exit(1);
+  }
+
+  if (state === "COMPLETE") {
+    console.log("ERROR: Run already completed");
+    process.exit(1);
+  }
+
+  if (state === "HALTED") {
+    console.log("Run is already halted.");
+    console.log("Use /run-resume to continue or resolve circuit breakers.");
+    process.exit(0);
+  }
+}
+```
+
+### Fallback: Legacy .run/ Files (Deprecated)
+
 ```bash
-preflight_halt() {
+preflight_halt_legacy() {
   local state_file=".run/state.json"
+
+  # DEPRECATED: Using legacy files
+  echo "[DEPRECATION WARNING] Using legacy .run/ files."
+  echo "Migrate to beads with: BeadsRunStateManager.migrateFromDotRun('.run')"
+  echo ""
 
   # Check if run is in progress
   if [[ ! -f "$state_file" ]]; then
@@ -54,184 +94,168 @@ preflight_halt() {
 ### Graceful Halt (Default)
 
 ```
-1. Check current phase
+1. Check current state via BeadsRunStateManager.getRunState()
 2. If phase incomplete:
    - Wait for phase completion (if possible)
    - Or skip to commit
-3. Commit current changes
-4. Push to feature branch
-5. Create draft PR marked INCOMPLETE
-6. Preserve .run/ state for resume
-7. Update state to HALTED
-8. Output summary
+3. Create circuit breaker bead with reason
+4. Commit current changes
+5. Push to feature branch
+6. Create draft PR marked INCOMPLETE
+7. Output summary
 ```
 
 ### Force Halt
 
 ```
 1. Immediately interrupt current operation
-2. Commit any staged changes
-3. Push to feature branch
-4. Create draft PR marked INCOMPLETE
-5. Preserve .run/ state for resume
-6. Update state to HALTED
-7. Output summary with warning
+2. Create circuit breaker bead with reason + FORCE flag
+3. Commit any staged changes
+4. Push to feature branch
+5. Create draft PR marked INCOMPLETE
+6. Output summary with warning
 ```
 
 ## Implementation
 
-### Halt Execution
+### Primary: BeadsRunStateManager
 
-```bash
-halt_run() {
-  local force="${1:-false}"
-  local reason="${2:-Manual halt}"
-  local state_file=".run/state.json"
-  local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+```typescript
+import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
 
-  # Get current info
-  local run_id=$(jq -r '.run_id' "$state_file")
-  local target=$(jq -r '.target' "$state_file")
-  local branch=$(jq -r '.branch' "$state_file")
-  local phase=$(jq -r '.phase' "$state_file")
+async function haltRun(force: boolean, reason: string) {
+  const manager = createBeadsRunStateManager();
 
-  echo "[HALT] Stopping run $run_id..."
-  echo "Target: $target"
-  echo "Phase: $phase"
-  echo "Reason: $reason"
+  console.log("[HALT] Stopping run...");
+  console.log(`Reason: ${reason}`);
 
-  if [[ "$force" == "true" ]]; then
-    echo ""
-    echo "WARNING: Force halt - current phase interrupted"
-  else
-    # Complete current phase if safe
-    complete_current_phase "$phase"
-  fi
+  if (force) {
+    console.log("");
+    console.log("WARNING: Force halt - current phase interrupted");
+  } else {
+    // Complete current phase if safe
+    await completeCurrentPhase();
+  }
 
-  # Commit any pending changes
-  commit_pending_changes "$reason"
+  // Create circuit breaker (this marks run as HALTED)
+  const circuitBreaker = await manager.haltRun(reason);
+  console.log(`✓ Circuit breaker created: ${circuitBreaker.beadId}`);
 
-  # Push to branch
-  push_to_branch "$branch"
+  // Get current sprint info
+  const currentSprint = await manager.getCurrentSprint();
 
-  # Create incomplete PR
-  create_incomplete_pr "$target" "$reason"
+  // Commit any pending changes
+  await commitPendingChanges(reason, currentSprint);
 
-  # Update state
-  update_halt_state "$reason" "$timestamp"
+  // Push to branch
+  const branch = getCurrentBranch();
+  await pushToBranch(branch);
 
-  # Output summary
-  output_halt_summary "$run_id" "$target" "$branch" "$reason"
+  // Create incomplete PR
+  await createIncompletePR(currentSprint, reason, circuitBreaker);
+
+  // Output summary
+  outputHaltSummary(currentSprint, branch, reason, circuitBreaker);
+}
+```
+
+### Create Circuit Breaker
+
+```typescript
+async function createCircuitBreaker(reason: string) {
+  const manager = createBeadsRunStateManager();
+
+  // haltRun() internally creates a circuit breaker bead:
+  // - type: debt
+  // - priority: 0 (critical)
+  // - labels: circuit-breaker, same-issue-1x
+  // - Adds comment with failure reason
+  // - Labels parent run with circuit-breaker
+
+  return await manager.haltRun(reason);
 }
 ```
 
 ### Complete Current Phase
 
-```bash
-complete_current_phase() {
-  local phase="$1"
+```typescript
+async function completeCurrentPhase() {
+  const manager = createBeadsRunStateManager();
+  const sprint = await manager.getCurrentSprint();
 
-  case "$phase" in
-    "IMPLEMENT")
-      echo "Completing implementation phase..."
-      # Implementation is already committed in cycles
-      echo "✓ Implementation phase safe to halt"
-      ;;
-    "REVIEW")
-      echo "Review in progress..."
-      echo "✓ Review can be resumed"
-      ;;
-    "AUDIT")
-      echo "Audit in progress..."
-      echo "✓ Audit can be resumed"
-      ;;
-    *)
-      echo "Unknown phase: $phase"
-      ;;
-  esac
+  if (!sprint) {
+    console.log("No active sprint phase");
+    return;
+  }
+
+  console.log(`Completing phase for sprint ${sprint.sprintNumber}...`);
+  console.log("✓ Phase can be resumed");
 }
 ```
 
 ### Commit Pending Changes
 
-```bash
-commit_pending_changes() {
-  local reason="$1"
+```typescript
+async function commitPendingChanges(reason: string, sprint: SprintState | null) {
+  const exec = promisify(require("child_process").exec);
 
-  # Check for uncommitted changes
-  if git diff --quiet && git diff --staged --quiet; then
-    echo "No pending changes to commit"
-    return 0
-  fi
+  // Check for uncommitted changes
+  const { stdout: diffOutput } = await exec(
+    'git diff --quiet && git diff --staged --quiet || echo "changes"',
+  );
 
-  echo "Committing pending changes..."
+  if (!diffOutput.includes("changes")) {
+    console.log("No pending changes to commit");
+    return;
+  }
 
-  # Stage all changes
-  git add -A
+  console.log("Committing pending changes...");
 
-  # Commit with halt message
-  git commit -m "WIP: Run halted - $reason
+  // Stage all changes
+  await exec("git add -A");
+
+  // Commit with halt message
+  const commitMessage = `WIP: Run halted - ${reason}
 
 This commit contains work-in-progress from an interrupted Run Mode session.
 Use /run-resume to continue from this point.
 
-Run ID: $(jq -r '.run_id' .run/state.json)
-Target: $(jq -r '.target' .run/state.json)
-Cycle: $(jq '.cycles.current' .run/state.json)
-Phase: $(jq -r '.phase' .run/state.json)
-"
+Sprint: ${sprint?.sprintNumber ?? "unknown"}
+State: HALTED (circuit breaker active)
+`;
 
-  echo "✓ Changes committed"
-}
-```
-
-### Push to Branch
-
-```bash
-push_to_branch() {
-  local branch="$1"
-
-  echo "Pushing to $branch..."
-
-  # Use ICE for safe push
-  .claude/scripts/run-mode-ice.sh push origin "$branch"
-
-  echo "✓ Pushed to $branch"
+  await exec(`git commit -m '${commitMessage.replace(/'/g, "'\\''")}'`);
+  console.log("✓ Changes committed");
 }
 ```
 
 ### Create Incomplete PR
 
-```bash
-create_incomplete_pr() {
-  local target="$1"
-  local reason="$2"
+```typescript
+async function createIncompletePR(
+  sprint: SprintState | null,
+  reason: string,
+  circuitBreaker: CircuitBreakerRecord,
+) {
+  const manager = createBeadsRunStateManager();
+  const sprints = await manager.getSprintPlan();
 
-  local state_file=".run/state.json"
-  local run_id=$(jq -r '.run_id' "$state_file")
-  local current_cycle=$(jq '.cycles.current' "$state_file")
-  local files_changed=$(jq '.metrics.files_changed' "$state_file")
-  local findings_fixed=$(jq '.metrics.findings_fixed' "$state_file")
+  const completed = sprints.filter((s) => s.status === "completed").length;
 
-  local body="## Run Mode Implementation - INCOMPLETE
+  const body = `## Run Mode Implementation - INCOMPLETE
 
 ### Status: HALTED
 
-**Run ID:** $run_id
-**Target:** $target
-**Halt Reason:** $reason
+**Halt Reason:** ${reason}
+**Circuit Breaker:** ${circuitBreaker.beadId}
 
-### Progress at Halt
-- Cycles completed: $current_cycle
-- Files changed: $files_changed
-- Findings fixed: $findings_fixed
+### Sprint Progress
 
-### Cycle History
-\`\`\`
-$(jq -r '.cycles.history[] | "Cycle \(.cycle): \(.phase) - \(.findings) findings"' "$state_file")
-\`\`\`
+| Sprint | Status | Tasks |
+|--------|--------|-------|
+${sprints.map((s) => `| Sprint ${s.sprintNumber} | ${s.status} | ${s.tasksCompleted}/${s.tasksTotal} |`).join("\n")}
 
-$(generate_deleted_tree)
+**Progress:** ${completed}/${sprints.length} sprints (${Math.round((completed / sprints.length) * 100)}%)
 
 ---
 :warning: **INCOMPLETE** - This PR represents partial work.
@@ -241,116 +265,103 @@ $(generate_deleted_tree)
 /run-resume
 \`\`\`
 
-### To Abandon
+### To Reset Circuit Breaker and Resume
 \`\`\`
-rm -rf .run/
-git branch -D $(jq -r '.branch' "$state_file")
+/run-resume --reset-ice
 \`\`\`
 
-:robot: Generated autonomously with Run Mode
-"
+:robot: Generated autonomously with Run Mode (beads-backed)
+`;
 
-  # Check if PR already exists
-  local existing_pr=$(gh pr list --head "$(jq -r '.branch' "$state_file")" --json number -q '.[0].number' 2>/dev/null)
+  // Create/update PR via ICE
+  await runModeIce.prCreate(
+    `[INCOMPLETE] Run Mode: Sprint ${sprint?.sprintNumber ?? "unknown"}`,
+    body,
+    { draft: true },
+  );
 
-  if [[ -n "$existing_pr" ]]; then
-    echo "Updating existing PR #$existing_pr..."
-    gh pr edit "$existing_pr" --title "[INCOMPLETE] Run Mode: $target" --body "$body"
-  else
-    echo "Creating draft PR..."
-    .claude/scripts/run-mode-ice.sh pr-create \
-      "[INCOMPLETE] Run Mode: $target" \
-      "$body" \
-      --draft
-  fi
-
-  echo "✓ PR created/updated"
-}
-```
-
-### Update Halt State
-
-```bash
-update_halt_state() {
-  local reason="$1"
-  local timestamp="$2"
-  local state_file=".run/state.json"
-
-  jq --arg r "$reason" --arg ts "$timestamp" '
-    .state = "HALTED" |
-    .halt = {
-      "reason": $r,
-      "timestamp": $ts
-    } |
-    .timestamps.last_activity = $ts
-  ' "$state_file" > "$state_file.tmp"
-  mv "$state_file.tmp" "$state_file"
+  console.log("✓ PR created/updated");
 }
 ```
 
 ### Output Summary
 
-```bash
-output_halt_summary() {
-  local run_id="$1"
-  local target="$2"
-  local branch="$3"
-  local reason="$4"
-
-  echo ""
-  echo "╔══════════════════════════════════════════════════════════════╗"
-  echo "║                    RUN HALTED                                 ║"
-  echo "╠══════════════════════════════════════════════════════════════╣"
-  echo "║ Run ID:    $run_id"
-  echo "║ Target:    $target"
-  echo "║ Branch:    $branch"
-  echo "║ Reason:    $reason"
-  echo "╠══════════════════════════════════════════════════════════════╣"
-  echo "║ State preserved in .run/"
-  echo "║"
-  echo "║ To resume:"
-  echo "║   /run-resume"
-  echo "║"
-  echo "║ To reset circuit breaker and resume:"
-  echo "║   /run-resume --reset-ice"
-  echo "║"
-  echo "║ To abandon:"
-  echo "║   rm -rf .run/"
-  echo "╚══════════════════════════════════════════════════════════════╝"
+```typescript
+function outputHaltSummary(
+  sprint: SprintState | null,
+  branch: string,
+  reason: string,
+  circuitBreaker: CircuitBreakerRecord,
+) {
+  console.log("");
+  console.log("╔══════════════════════════════════════════════════════════════╗");
+  console.log("║                    RUN HALTED                                 ║");
+  console.log("╠══════════════════════════════════════════════════════════════╣");
+  console.log(`║ Sprint:    ${sprint?.sprintNumber ?? "unknown"}`);
+  console.log(`║ Branch:    ${branch}`);
+  console.log(`║ Reason:    ${reason}`);
+  console.log(`║ Circuit:   ${circuitBreaker.beadId}`);
+  console.log("╠══════════════════════════════════════════════════════════════╣");
+  console.log("║ State stored in beads (unified)");
+  console.log("║");
+  console.log("║ To resume:");
+  console.log("║   /run-resume");
+  console.log("║");
+  console.log("║ To reset circuit breaker and resume:");
+  console.log("║   /run-resume --reset-ice");
+  console.log("║");
+  console.log("║ To view circuit breakers:");
+  console.log("║   br list --label circuit-breaker --status open");
+  console.log("╚══════════════════════════════════════════════════════════════╝");
 }
 ```
 
+## Circuit Breaker as Bead
+
+When halting, a circuit breaker bead is created:
+
+```
+br create \
+  --title "Circuit Breaker: Sprint X" \
+  --type debt \
+  --priority 0 \
+  --label circuit-breaker \
+  --label same-issue-1x
+
+br comments add <cb-id> "Triggered: <reason>"
+br label add <run-id> circuit-breaker
+```
+
+This ensures:
+
+- The run state shows HALTED
+- The reason is preserved in bead comments
+- Circuit breakers are queryable via `br list --label circuit-breaker`
+
 ## State After Halt
 
-### state.json
+### Beads State
 
-```json
-{
-  "run_id": "run-20260119-abc123",
-  "target": "sprint-3",
-  "branch": "feature/sprint-3",
-  "state": "HALTED",
-  "phase": "REVIEW",
-  "halt": {
-    "reason": "Manual halt",
-    "timestamp": "2026-01-19T14:30:00Z"
-  },
-  "timestamps": {
-    "started": "2026-01-19T10:00:00Z",
-    "last_activity": "2026-01-19T14:30:00Z"
-  },
-  "cycles": {
-    "current": 3,
-    "limit": 20,
-    "history": [...]
-  },
-  "metrics": {
-    "files_changed": 15,
-    "files_deleted": 2,
-    "commits": 3,
-    "findings_fixed": 7
-  }
-}
+```bash
+# Run bead has circuit-breaker label
+br show <run-id>
+# Labels: run:current, circuit-breaker
+
+# Circuit breaker bead exists
+br list --label circuit-breaker --status open
+# Returns: [{ id: "cb-xyz", ... }]
+
+# Current sprint preserved
+br list --label sprint:in_progress
+# Returns: [{ id: "sprint-x", ... }]
+```
+
+### Query State
+
+```typescript
+const manager = createBeadsRunStateManager();
+const state = await manager.getRunState(); // Returns "HALTED"
+const cbs = await manager.getActiveCircuitBreakers(); // Returns circuit breaker records
 ```
 
 ## Example Session
@@ -358,19 +369,19 @@ output_halt_summary() {
 ```
 > /run-halt --reason "Need to review architecture approach"
 
-[HALT] Stopping run run-20260119-abc123...
-Target: sprint-3
-Phase: REVIEW
+[HALT] Stopping run...
 Reason: Need to review architecture approach
 
-Completing review phase...
-✓ Review can be resumed
+Completing phase for sprint 2...
+✓ Phase can be resumed
+
+✓ Circuit breaker created: cb-abc123
 
 Committing pending changes...
 ✓ Changes committed
 
-Pushing to feature/sprint-3...
-✓ Pushed to feature/sprint-3
+Pushing to feature/sprint-2...
+✓ Pushed to feature/sprint-2
 
 Creating draft PR...
 ✓ PR created/updated
@@ -378,12 +389,12 @@ Creating draft PR...
 ╔══════════════════════════════════════════════════════════════╗
 ║                    RUN HALTED                                 ║
 ╠══════════════════════════════════════════════════════════════╣
-║ Run ID:    run-20260119-abc123
-║ Target:    sprint-3
-║ Branch:    feature/sprint-3
+║ Sprint:    2
+║ Branch:    feature/sprint-2
 ║ Reason:    Need to review architecture approach
+║ Circuit:   cb-abc123
 ╠══════════════════════════════════════════════════════════════╣
-║ State preserved in .run/
+║ State stored in beads (unified)
 ║
 ║ To resume:
 ║   /run-resume
@@ -391,8 +402,8 @@ Creating draft PR...
 ║ To reset circuit breaker and resume:
 ║   /run-resume --reset-ice
 ║
-║ To abandon:
-║   rm -rf .run/
+║ To view circuit breakers:
+║   br list --label circuit-breaker --status open
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
@@ -401,3 +412,4 @@ Creating draft PR...
 - `/run-status` - Check current state
 - `/run-resume` - Continue from halt
 - `/run sprint-N` - Start new run
+- `BeadsRunStateManager` - TypeScript API for state management
