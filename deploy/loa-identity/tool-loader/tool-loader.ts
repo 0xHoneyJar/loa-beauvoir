@@ -111,14 +111,18 @@ rm /tmp/rustup-init`,
   },
   {
     name: "beads_rust",
-    version: "latest",
+    version: "0.1.13",
     installType: "cargo",
-    // Note: beads_rust is not on crates.io, must install from GitHub
+    // SECURITY: Pin to audited commit hash (CRITICAL-001 remediation)
+    // Commit 505aa76a verified on 2026-02-05, corresponds to v0.1.13
+    // To update: audit new commit, verify no malicious changes, update hash
     installCmd: [
       "/root/.cargo/bin/cargo",
       "install",
       "--git",
       "https://github.com/Dicklesworthstone/beads_rust",
+      "--rev",
+      "505aa76a",
     ],
     verifyCmd: ["/root/.cargo/bin/br", "--version"],
     binaryPath: "/root/.cargo/bin/br",
@@ -228,14 +232,28 @@ export class ToolLoader {
     const startTime = Date.now();
 
     return new Promise((resolve) => {
+      // SECURITY: Explicit environment allowlist (MEDIUM-001 remediation)
+      // Only pass safe, non-secret environment variables to child processes
+      // This prevents accidental leakage of API keys, tokens, or credentials
+      const safeEnv: Record<string, string> = {
+        // Required paths
+        PATH: `/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH ?? ""}`,
+        HOME: "/root",
+        // Rust toolchain
+        RUSTUP_HOME: "/root/.rustup",
+        CARGO_HOME: "/root/.cargo",
+        // Terminal (for colored output)
+        TERM: process.env.TERM ?? "xterm-256color",
+        // Locale (for consistent text handling)
+        LANG: process.env.LANG ?? "C.UTF-8",
+        LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
+        // Build parallelism (respect container limits)
+        CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+        // Explicitly NO: ANTHROPIC_API_KEY, CLAWDBOT_*, OPENAI_*, etc.
+      };
+
       const proc = spawn(cmd[0], cmd.slice(1), {
-        env: {
-          ...process.env,
-          PATH: `/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH}`,
-          RUSTUP_HOME: "/root/.rustup",
-          CARGO_HOME: "/root/.cargo",
-          HOME: "/root",
-        },
+        env: safeEnv,
         stdio: ["ignore", "pipe", "pipe"],
         shell: cmd[0] === "sh",
       });
