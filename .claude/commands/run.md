@@ -4,9 +4,6 @@
 
 Autonomous execution of sprint implementation with cycle loop until review and audit pass.
 
-**Primary data source**: BeadsRunStateManager (Phase 4+)
-**Fallback**: .run/ state files (legacy, deprecated)
-
 ## Usage
 
 ```
@@ -47,43 +44,53 @@ Before execution begins, validate:
    fi
    ```
 
-2. **Branch Safety Check**
+2. **Beads-First Check (v1.29.0)**
+
+   ```bash
+   # Autonomous mode REQUIRES beads by default
+   health=$(.claude/scripts/beads/beads-health.sh --quick --json)
+   status=$(echo "$health" | jq -r '.status')
+
+   if [[ "$status" != "HEALTHY" && "$status" != "DEGRADED" ]]; then
+     # Check for override
+     beads_required=$(yq '.beads.autonomous.requires_beads // true' .loa.config.yaml)
+     if [[ "$beads_required" == "true" ]]; then
+       echo "HALT: Autonomous mode requires beads (status: $status)"
+       echo ""
+       echo "Beads provides:"
+       echo "  - Task state persistence across context windows"
+       echo "  - Progress tracking for overnight/unattended execution"
+       echo "  - Recovery from interruptions"
+       echo ""
+       echo "To fix:"
+       echo "  cargo install beads_rust && br init"
+       echo ""
+       echo "To override (not recommended):"
+       echo "  Set beads.autonomous.requires_beads: false in .loa.config.yaml"
+       echo "  Or: export LOA_BEADS_AUTONOMOUS_OVERRIDE=true"
+       exit 1
+     fi
+   fi
+
+   # Update health state
+   .claude/scripts/beads/update-beads-state.sh --health "$status"
+   ```
+
+3. **Branch Safety Check**
 
    ```bash
    # Verify not on protected branch using ICE
    .claude/scripts/run-mode-ice.sh validate
    ```
 
-3. **Permission Check**
+4. **Permission Check**
 
    ```bash
    # Verify all required permissions configured
    .claude/scripts/check-permissions.sh --quiet
    ```
 
-4. **State Check (Primary: BeadsRunStateManager)**
-
-   ```typescript
-   import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
-
-   async function checkRunState() {
-     const manager = createBeadsRunStateManager();
-     const state = await manager.getRunState();
-
-     if (state === "RUNNING") {
-       console.log("ERROR: Run already in progress. Use /run-halt or /run-resume");
-       process.exit(1);
-     }
-
-     if (state === "HALTED") {
-       console.log("ERROR: Run is halted. Use /run-resume to continue");
-       process.exit(1);
-     }
-   }
-   ```
-
-   **Fallback: Legacy .run/ Files (Deprecated)**
-
+5. **State Check**
    ```bash
    # Check for conflicting .run/ state
    if [[ -f .run/state.json ]]; then
@@ -136,38 +143,7 @@ update_state(state: JACKED_OUT)
 
 ## State Management
 
-### Primary: Beads-Backed State (Phase 4+)
-
-The BeadsRunStateManager uses beads labels to track run state:
-
-```typescript
-import { createBeadsRunStateManager } from "deploy/loa-identity/beads/index.js";
-
-async function initializeRun(sprintIds: string[]) {
-  const manager = createBeadsRunStateManager();
-
-  // Start run - creates run epic and labels sprints
-  const runId = await manager.startRun(sprintIds);
-
-  // Start first sprint
-  await manager.startSprint(sprintIds[0]);
-
-  return runId;
-}
-
-async function onCircuitBreakerTrigger(reason: string) {
-  const manager = createBeadsRunStateManager();
-  const cb = await manager.haltRun(reason);
-  console.log(`Circuit breaker created: ${cb.beadId}`);
-}
-
-async function onSprintComplete(sprintId: string) {
-  const manager = createBeadsRunStateManager();
-  await manager.completeSprint(sprintId);
-}
-```
-
-### Fallback: Legacy State File Structure (Deprecated)
+### State File Structure
 
 File: `.run/state.json`
 
