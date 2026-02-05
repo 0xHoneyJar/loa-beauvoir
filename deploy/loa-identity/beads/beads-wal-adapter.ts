@@ -13,26 +13,61 @@
 
 import { createHash, randomUUID } from "crypto";
 import type { SegmentedWALManager, WALEntry } from "../wal/wal-manager.js";
-import {
-  validateBeadId,
-  validateOperation as validateOperationBase,
-  BEAD_ID_PATTERN,
-  MAX_BEAD_ID_LENGTH,
-  ALLOWED_OPERATIONS as BASE_ALLOWED_OPERATIONS,
-} from "../../../.claude/lib/beads";
 
 /**
- * SECURITY: Allowed operation types for WAL (whitelist)
- * Uses upstream base operations
+ * SECURITY: Pattern for valid bead IDs (alphanumeric, underscore, hyphen only)
+ * Prevents path traversal and injection via beadId
  */
-const ALLOWED_OPERATIONS = BASE_ALLOWED_OPERATIONS;
+const BEAD_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * SECURITY: Maximum beadId length to prevent DoS via extremely long IDs
+ */
+const MAX_BEAD_ID_LENGTH = 128;
+
+/**
+ * SECURITY: Allowed operation types (whitelist)
+ */
+const ALLOWED_OPERATIONS = new Set<BeadOperation>([
+  "create",
+  "update",
+  "close",
+  "reopen",
+  "label",
+  "comment",
+  "dep",
+]);
+
+/**
+ * SECURITY: Validate bead ID against safe pattern
+ * @throws Error if beadId contains unsafe characters or is invalid
+ */
+function validateBeadId(beadId: unknown): asserts beadId is string {
+  if (!beadId || typeof beadId !== "string") {
+    throw new Error("Invalid beadId: must be a non-empty string");
+  }
+  if (!BEAD_ID_PATTERN.test(beadId)) {
+    throw new Error(
+      `Invalid beadId: must match pattern ${BEAD_ID_PATTERN} (alphanumeric, underscore, hyphen only)`,
+    );
+  }
+  if (beadId.length > MAX_BEAD_ID_LENGTH) {
+    throw new Error(`Invalid beadId: exceeds maximum length of ${MAX_BEAD_ID_LENGTH} characters`);
+  }
+}
 
 /**
  * SECURITY: Validate operation type against whitelist
- * Wraps upstream validateOperation with BeadOperation type assertion
  */
 function validateOperation(operation: unknown): asserts operation is BeadOperation {
-  validateOperationBase(operation);
+  if (!operation || typeof operation !== "string") {
+    throw new Error("Invalid operation: must be a non-empty string");
+  }
+  if (!ALLOWED_OPERATIONS.has(operation as BeadOperation)) {
+    throw new Error(
+      `Invalid operation: must be one of ${Array.from(ALLOWED_OPERATIONS).join(", ")}`,
+    );
+  }
 }
 
 /**
