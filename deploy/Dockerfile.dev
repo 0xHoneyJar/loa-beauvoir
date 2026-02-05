@@ -33,6 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    # Build tools for Rust compilation (required for beads_rust, ck-search)
+    build-essential \
+    pkg-config \
+    libssl-dev \
     # Dev tools for hot-reload
     entr \
     inotify-tools \
