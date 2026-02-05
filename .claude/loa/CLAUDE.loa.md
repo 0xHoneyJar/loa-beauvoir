@@ -1,4 +1,4 @@
-<!-- @loa-managed: true | version: 1.27.0 | hash: PLACEHOLDER -->
+<!-- @loa-managed: true | version: 1.29.0 | hash: PLACEHOLDER -->
 <!-- WARNING: This file is managed by the Loa Framework. Do not edit directly. -->
 
 # Loa Framework Instructions
@@ -13,6 +13,71 @@ Agent-driven development framework. Skills auto-load their SKILL.md when invoked
 | Context/Memory | `.claude/loa/reference/context-engineering.md` |
 | Protocols      | `.claude/loa/reference/protocols-summary.md`   |
 | Scripts        | `.claude/loa/reference/scripts-reference.md`   |
+
+## Beads-First Architecture (v1.29.0)
+
+**Beads task tracking is the EXPECTED DEFAULT, not an optional enhancement.**
+
+_"We're building spaceships. Safety of operators and users is paramount."_
+
+### Philosophy
+
+Working without beads is treated as an **abnormal state** requiring explicit, time-limited acknowledgment. Health checks run at every workflow boundary.
+
+### Health Check
+
+```bash
+# Check beads status
+.claude/scripts/beads/beads-health.sh --json
+```
+
+| Status             | Exit Code | Meaning               | Action         |
+| ------------------ | --------- | --------------------- | -------------- |
+| `HEALTHY`          | 0         | All checks pass       | Proceed        |
+| `NOT_INSTALLED`    | 1         | br binary not found   | Prompt install |
+| `NOT_INITIALIZED`  | 2         | No .beads directory   | Prompt br init |
+| `MIGRATION_NEEDED` | 3         | Schema incompatible   | Must fix       |
+| `DEGRADED`         | 4         | Partial functionality | Warn, proceed  |
+| `UNHEALTHY`        | 5         | Critical issues       | Must fix       |
+
+### Autonomous Mode
+
+**Autonomous mode REQUIRES beads** (unless overridden):
+
+```bash
+# /run preflight will HALT if beads unavailable
+/run sprint-1  # Blocked if beads.autonomous.requires_beads: true
+
+# Override (not recommended)
+export LOA_BEADS_AUTONOMOUS_OVERRIDE=true
+# Or set beads.autonomous.requires_beads: false in config
+```
+
+### Opt-Out Workflow
+
+When beads unavailable, users can acknowledge and continue (24h expiry):
+
+```bash
+# Record opt-out with reason
+.claude/scripts/beads/update-beads-state.sh --opt-out "Reason"
+
+# Check if opt-out is valid
+.claude/scripts/beads/update-beads-state.sh --opt-out-check
+```
+
+### Configuration
+
+```yaml
+beads:
+  mode: recommended # required | recommended | disabled
+  opt_out:
+    confirmation_interval_hours: 24
+    require_reason: true
+  autonomous:
+    requires_beads: true
+```
+
+**Protocol**: `.claude/protocols/beads-preflight.md`
 
 ## Three-Zone Model
 
@@ -113,6 +178,126 @@ fi
 ```
 
 **Rationale**: Run mode is designed for overnight/unattended execution. Context compaction should not interrupt autonomous operation.
+
+## Post-Compact Recovery Hooks (v1.28.0)
+
+Loa provides automatic context recovery after compaction via Claude Code hooks.
+
+### How It Works
+
+1. **PreCompact Hook**: Saves current state to `.run/compact-pending`
+2. **UserPromptSubmit Hook**: Detects marker, injects recovery reminder
+3. **One-shot delivery**: Reminder appears once, marker is deleted
+
+### Automatic Recovery
+
+When compaction is detected, you will see a recovery reminder instructing you to:
+
+1. Re-read this file (CLAUDE.md) for conventions
+2. Check `.run/sprint-plan-state.json` - resume if `state=RUNNING`
+3. Check `.run/simstim-state.json` - resume from last phase
+4. Review `grimoires/loa/NOTES.md` for learnings
+
+### Installation
+
+Hooks are in `.claude/hooks/`. To enable, add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": ".claude/hooks/pre-compact-marker.sh" }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": ".claude/hooks/post-compact-reminder.sh" }]
+      }
+    ]
+  }
+}
+```
+
+See `.claude/hooks/README.md` for full documentation.
+
+## Flatline Beads Loop (v1.28.0)
+
+Iterative multi-model refinement of task graphs. "Check your beads N times, implement once."
+
+### How It Works
+
+1. Export beads to JSON (`br list --json`)
+2. Run Flatline Protocol review on task graph
+3. Apply HIGH_CONSENSUS suggestions automatically
+4. Repeat until changes "flatline" (< 5% change for 2 iterations)
+5. Sync final state to git
+
+### Usage
+
+```bash
+# Manual invocation
+.claude/scripts/beads-flatline-loop.sh --max-iterations 6 --threshold 5
+
+# In simstim workflow (Phase 6.5)
+# Automatically runs after FLATLINE SPRINT phase when beads_rust is installed
+```
+
+### Configuration
+
+```yaml
+simstim:
+  flatline:
+    beads_loop: true # Enable Flatline Beads Loop
+```
+
+Requires beads_rust (`br`). See: https://github.com/Dicklesworthstone/beads_rust
+
+## Persistent Memory (v1.28.0)
+
+Session-spanning observation storage with progressive disclosure for cross-session recall.
+
+### How It Works
+
+1. **Memory Writer Hook**: Captures observations from tool outputs when learning signals detected
+2. **Observations File**: Stored in `grimoires/loa/memory/observations.jsonl`
+3. **Progressive Disclosure**: Query at different detail levels to manage token budget
+
+### Learning Signals
+
+Automatically captured: discovered, learned, fixed, resolved, pattern, insight
+
+### Query Interface
+
+```bash
+# Token-efficient index (~50 tokens per entry)
+.claude/scripts/memory-query.sh --index
+
+# Summary view (~200 tokens per entry)
+.claude/scripts/memory-query.sh --summary --limit 5
+
+# Full details (~500 tokens)
+.claude/scripts/memory-query.sh --full obs-1234567890-abc123
+
+# Filter by type
+.claude/scripts/memory-query.sh --type learning
+
+# Free-text search
+.claude/scripts/memory-query.sh "authentication pattern"
+```
+
+### Configuration
+
+```yaml
+memory:
+  enabled: true
+  max_observations: 10000
+  capture:
+    discoveries: true
+    errors: true
+```
 
 ## Invisible Prompt Enhancement (v1.17.0)
 

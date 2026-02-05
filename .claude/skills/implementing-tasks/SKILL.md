@@ -14,6 +14,7 @@ zones:
 ---
 
 <input_guardrails>
+
 ## Pre-Execution Validation
 
 Before main skill execution, perform guardrail checks.
@@ -21,6 +22,7 @@ Before main skill execution, perform guardrail checks.
 ### Step 1: Check Configuration
 
 Read `.loa.config.yaml`:
+
 ```yaml
 guardrails:
   input:
@@ -28,6 +30,7 @@ guardrails:
 ```
 
 **Exit Conditions**:
+
 - `guardrails.input.enabled: false` → Skip to prompt enhancement
 - Environment `LOA_GUARDRAILS_ENABLED=false` → Skip to prompt enhancement
 
@@ -35,17 +38,18 @@ guardrails:
 
 **Script**: `.claude/scripts/danger-level-enforcer.sh --skill implementing-tasks --mode {mode}`
 
-| Action | Behavior |
-|--------|----------|
+| Action  | Behavior                                         |
+| ------- | ------------------------------------------------ |
 | PROCEED | Continue (moderate skill - allowed in all modes) |
-| WARN | Log warning, continue |
-| BLOCK | HALT execution, notify user |
+| WARN    | Log warning, continue                            |
+| BLOCK   | HALT execution, notify user                      |
 
 ### Step 3: Run PII Filter
 
 **Script**: `.claude/scripts/pii-filter.sh`
 
 Detect and redact:
+
 - API keys, tokens, secrets
 - Email addresses, phone numbers
 - SSN, credit cards
@@ -58,6 +62,7 @@ Log redaction count to trajectory (never log PII values).
 **Script**: `.claude/scripts/injection-detect.sh --threshold 0.7`
 
 Check for:
+
 - Instruction override attempts
 - Role confusion attacks
 - Context manipulation
@@ -75,6 +80,7 @@ On error: Log to trajectory, **fail-open** (continue to skill).
 </input_guardrails>
 
 <prompt_enhancement_prelude>
+
 ## Invisible Prompt Enhancement
 
 Before executing main skill logic, apply automatic prompt enhancement to user's request.
@@ -82,6 +88,7 @@ Before executing main skill logic, apply automatic prompt enhancement to user's 
 ### Step 1: Check Configuration
 
 Read `.loa.config.yaml` invisible_mode setting:
+
 ```yaml
 prompt_enhancement:
   invisible_mode:
@@ -98,14 +105,15 @@ If this command's frontmatter specifies `enhance: false`, skip enhancement.
 
 Analyze the user's prompt for PTCF components:
 
-| Component | Detection Patterns | Weight |
-|-----------|-------------------|--------|
-| **Persona** | "act as", "you are", "as a", "pretend", "assume the role" | 2 |
-| **Task** | create, review, analyze, fix, summarize, write, debug, refactor, build, implement, design | 3 |
-| **Context** | @mentions, file references (.ts, .js, .py), "given that", "based on", "from the", "in the" | 3 |
-| **Format** | "as bullets", "in JSON", "formatted as", "limit to", "step by step", "as a table" | 2 |
+| Component   | Detection Patterns                                                                         | Weight |
+| ----------- | ------------------------------------------------------------------------------------------ | ------ |
+| **Persona** | "act as", "you are", "as a", "pretend", "assume the role"                                  | 2      |
+| **Task**    | create, review, analyze, fix, summarize, write, debug, refactor, build, implement, design  | 3      |
+| **Context** | @mentions, file references (.ts, .js, .py), "given that", "based on", "from the", "in the" | 3      |
+| **Format**  | "as bullets", "in JSON", "formatted as", "limit to", "step by step", "as a table"          | 2      |
 
 Calculate score (0-10):
+
 - Task verb present: +3
 - Context present: +3
 - Format specified: +2
@@ -126,6 +134,7 @@ If score < `prompt_enhancement.auto_enhance_threshold` (default 4):
 ### Step 5: Log to Trajectory (Silent)
 
 Write to `grimoires/loa/a2a/trajectory/prompt-enhancement-{date}.jsonl`:
+
 ```json
 {
   "type": "prompt_enhancement",
@@ -149,10 +158,11 @@ Use the (potentially enhanced) prompt for main skill execution.
 ### Error Handling
 
 On ANY error during enhancement:
+
 - Log `action: "ERROR"` to trajectory
 - Use original prompt unchanged (silent passthrough)
 - Continue with main skill execution
-</prompt_enhancement_prelude>
+  </prompt_enhancement_prelude>
 
 # Sprint Task Implementer
 
@@ -161,20 +171,22 @@ Implement sprint tasks from `grimoires/loa/sprint.md` with production-grade code
 </objective>
 
 <zone_constraints>
+
 ## Zone Constraints
 
 This skill operates under **Managed Scaffolding**:
 
-| Zone | Permission | Notes |
-|------|------------|-------|
-| `.claude/` | NONE | System zone - never suggest edits |
-| `grimoires/loa/`, `.beads/` | Read/Write | State zone - project memory |
-| `src/`, `lib/`, `app/` | Read-only | App zone - requires user confirmation |
+| Zone                        | Permission | Notes                                 |
+| --------------------------- | ---------- | ------------------------------------- |
+| `.claude/`                  | NONE       | System zone - never suggest edits     |
+| `grimoires/loa/`, `.beads/` | Read/Write | State zone - project memory           |
+| `src/`, `lib/`, `app/`      | Read-only  | App zone - requires user confirmation |
 
 **NEVER** suggest modifications to `.claude/`. Direct users to `.claude/overrides/` or `.loa.config.yaml`.
 </zone_constraints>
 
 <integrity_precheck>
+
 ## Integrity Pre-Check (MANDATORY)
 
 Before ANY operation, verify System Zone integrity:
@@ -182,9 +194,10 @@ Before ANY operation, verify System Zone integrity:
 1. Check config: `yq eval '.integrity_enforcement' .loa.config.yaml`
 2. If `strict` and drift detected -> **HALT** and report
 3. If `warn` -> Log warning and proceed with caution
-</integrity_precheck>
+   </integrity_precheck>
 
 <factual_grounding>
+
 ## Factual Grounding (MANDATORY)
 
 Before ANY synthesis, planning, or recommendation:
@@ -194,64 +207,76 @@ Before ANY synthesis, planning, or recommendation:
 3. **Flag assumptions**: Prefix ungrounded claims with `[ASSUMPTION]`
 
 **Grounded Example:**
+
 ```
 The SDD specifies "PostgreSQL 15 with pgvector extension" (sdd.md:L123)
 ```
 
 **Ungrounded Example:**
+
 ```
 [ASSUMPTION] The database likely needs connection pooling
 ```
+
 </factual_grounding>
 
 <structured_memory_protocol>
+
 ## Structured Memory Protocol
 
 ### On Session Start
+
 1. Read `grimoires/loa/NOTES.md`
 2. Restore context from "Session Continuity" section
 3. Check for resolved blockers
 
 ### During Execution
+
 1. Log decisions to "Decision Log"
 2. Add discovered issues to "Technical Debt"
 3. Update sub-goal status
 4. **Apply Tool Result Clearing** after each tool-heavy operation
 
 ### Before Compaction / Session End
+
 1. Summarize session in "Session Continuity"
 2. Ensure all blockers documented
 3. Verify all raw tool outputs have been decayed
-</structured_memory_protocol>
+   </structured_memory_protocol>
 
 <tool_result_clearing>
+
 ## Tool Result Clearing
 
 After tool-heavy operations (grep, cat, tree, API calls):
+
 1. **Synthesize**: Extract key info to NOTES.md or discovery/
 2. **Summarize**: Replace raw output with one-line summary
 3. **Clear**: Release raw data from active reasoning
 
 Example:
+
 ```
 # Raw grep: 500 tokens -> After decay: 30 tokens
 "Found 47 AuthService refs across 12 files. Key locations in NOTES.md."
 ```
+
 </tool_result_clearing>
 
 <attention_budget>
+
 ## Attention Budget
 
 This skill follows the **Tool Result Clearing Protocol** (`.claude/protocols/tool-result-clearing.md`).
 
 ### Token Thresholds
 
-| Context Type | Limit | Action |
-|--------------|-------|--------|
-| Single search result | 2,000 tokens | Apply 4-step clearing |
-| Accumulated results | 5,000 tokens | MANDATORY clearing |
-| Full file load | 3,000 tokens | Single file, synthesize immediately |
-| Session total | 15,000 tokens | STOP, synthesize to NOTES.md |
+| Context Type         | Limit         | Action                              |
+| -------------------- | ------------- | ----------------------------------- |
+| Single search result | 2,000 tokens  | Apply 4-step clearing               |
+| Accumulated results  | 5,000 tokens  | MANDATORY clearing                  |
+| Full file load       | 3,000 tokens  | Single file, synthesize immediately |
+| Session total        | 15,000 tokens | STOP, synthesize to NOTES.md        |
 
 ### Clearing Triggers for Implementation
 
@@ -270,14 +295,16 @@ This skill follows the **Tool Result Clearing Protocol** (`.claude/protocols/too
 
 ### Semantic Decay Stages
 
-| Stage | Age | Format | Cost |
-|-------|-----|--------|------|
-| Active | 0-5 min | Full synthesis + snippets | ~200 tokens |
-| Decayed | 5-30 min | Paths only | ~12 tokens/file |
-| Archived | 30+ min | Single-line in trajectory | ~20 tokens |
+| Stage    | Age      | Format                    | Cost            |
+| -------- | -------- | ------------------------- | --------------- |
+| Active   | 0-5 min  | Full synthesis + snippets | ~200 tokens     |
+| Decayed  | 5-30 min | Paths only                | ~12 tokens/file |
+| Archived | 30+ min  | Single-line in trajectory | ~20 tokens      |
+
 </attention_budget>
 
 <trajectory_logging>
+
 ## Trajectory Logging
 
 Log each significant step to `grimoires/loa/a2a/trajectory/{agent}-{date}.jsonl`:
@@ -285,13 +312,17 @@ Log each significant step to `grimoires/loa/a2a/trajectory/{agent}-{date}.jsonl`
 ```json
 {"timestamp": "...", "agent": "...", "action": "...", "reasoning": "...", "grounding": {...}}
 ```
+
 </trajectory_logging>
 
 <kernel_framework>
+
 ## Task (N - Narrow Scope)
+
 Implement sprint tasks from `grimoires/loa/sprint.md` with production-grade code and tests. Generate implementation report at `grimoires/loa/a2a/sprint-N/reviewer.md`. Address feedback iteratively.
 
 ## Context (L - Logical Structure)
+
 - **Input**: `grimoires/loa/sprint.md` (tasks), `grimoires/loa/prd.md` (requirements), `grimoires/loa/sdd.md` (architecture)
 - **Feedback loops**:
   - `grimoires/loa/a2a/sprint-N/auditor-sprint-feedback.md` (security audit - HIGHEST PRIORITY)
@@ -301,6 +332,7 @@ Implement sprint tasks from `grimoires/loa/sprint.md` with production-grade code
 - **Desired state**: Working, tested implementation + comprehensive report
 
 ## Constraints (E - Explicit)
+
 - DO NOT start new work without checking for audit feedback FIRST (highest priority)
 - DO NOT start new work without checking for engineer feedback SECOND
 - DO NOT assume feedback meaning—ask clarifying questions if unclear
@@ -313,9 +345,11 @@ Implement sprint tasks from `grimoires/loa/sprint.md` with production-grade code
 - DO follow SemVer for version updates
 
 ## Verification (E - Easy to Verify)
+
 **Success** = All acceptance criteria met + comprehensive tests pass + detailed report at expected path
 
 Report MUST include:
+
 - Executive Summary
 - Tasks Completed (files/lines modified, approach, test coverage)
 - Technical Highlights (architecture, performance, security, integrations)
@@ -325,32 +359,37 @@ Report MUST include:
 - Feedback Addressed section (if iteration after feedback)
 
 ## Reproducibility (R - Reproducible Results)
+
 - Write tests with specific assertions: NOT "it works" → "returns 200 status, response includes user.id field"
 - Document specific file paths and line numbers: NOT "updated auth" → "src/auth/middleware.ts:42-67"
 - Include exact commands to reproduce: NOT "run tests" → "npm test -- --coverage --watch=false"
 - Reference specific commits or branches when relevant
-</kernel_framework>
+  </kernel_framework>
 
 <uncertainty_protocol>
+
 - If requirements are ambiguous, reference PRD and SDD for clarification
 - If feedback is unclear, ASK specific clarifying questions before proceeding
 - Say "I need clarification on [X]" when feedback meaning is uncertain
 - Document interpretations and reasoning in report for reviewer attention
 - Flag technical tradeoffs explicitly for reviewer decision
-</uncertainty_protocol>
+  </uncertainty_protocol>
 
 <karpathy_principles>
+
 ## Karpathy Principles (MANDATORY)
 
 Counter common LLM coding pitfalls with these four principles:
 
 ### 1. Think Before Coding
+
 - Surface assumptions explicitly before implementing
 - When multiple interpretations exist, present options rather than choosing silently
 - Ask clarifying questions for ambiguous requirements
 - Push back when simpler alternatives exist
 
 ### 2. Simplicity First
+
 - Write minimal code solving ONLY what was requested
 - No speculative features or "just in case" handling
 - No abstractions for single-use code
@@ -358,6 +397,7 @@ Counter common LLM coding pitfalls with these four principles:
 - If code could be 50 lines instead of 200, rewrite simpler
 
 ### 3. Surgical Changes
+
 - Only modify lines necessary for the task
 - Match existing code style even if you'd do it differently
 - Don't "improve" adjacent code, comments, or formatting
@@ -365,11 +405,13 @@ Counter common LLM coding pitfalls with these four principles:
 - Don't clean up pre-existing issues (note them separately)
 
 ### 4. Goal-Driven Execution
+
 - Define verifiable success criteria BEFORE starting
 - Transform tasks into testable outcomes
 - For each task: WHAT (deliverable), VERIFY (how to test), EVIDENCE (expected output)
 
 **Pre-Implementation Check:**
+
 - [ ] Assumptions listed in reasoning
 - [ ] Clarifications sought for ambiguities
 - [ ] Scope minimal (no speculative features)
@@ -381,6 +423,7 @@ Reference: `.claude/protocols/karpathy-principles.md`
 
 <grounding_requirements>
 Before implementing:
+
 1. Check `grimoires/loa/a2a/sprint-N/auditor-sprint-feedback.md` FIRST (security audit)
 2. Check `grimoires/loa/a2a/sprint-N/engineer-feedback.md` SECOND (senior lead)
 3. Check `grimoires/loa/a2a/integration-context.md` for organizational context
@@ -388,42 +431,89 @@ Before implementing:
 5. Read `grimoires/loa/sdd.md` for technical architecture
 6. Read `grimoires/loa/prd.md` for business requirements
 7. Quote requirements when implementing: `> From sprint.md: Task 1.2 requires...`
-</grounding_requirements>
+   </grounding_requirements>
 
 <citation_requirements>
+
 - Reference sprint task IDs when implementing
 - Cite SDD sections for architectural decisions
 - Include file paths and line numbers in report
 - Quote feedback items when addressing them
 - Reference test file paths and coverage metrics
-</citation_requirements>
+  </citation_requirements>
 
 <workflow>
-## Phase -2: Beads Integration Check
+## Phase -2: Beads-First Integration (v1.29.0)
 
-Check if beads_rust is available for task lifecycle management:
+Beads task tracking is the EXPECTED DEFAULT. Check health and sync before implementation.
+
+### Run Beads Health Check
 
 ```bash
-.claude/scripts/beads/check-beads.sh --quiet
+health=$(.claude/scripts/beads/beads-health.sh --quick --json)
+status=$(echo "$health" | jq -r '.status')
 ```
 
-**If INSTALLED**:
-1. Import latest state: `br sync --import-only`
-2. Use beads_rust for task lifecycle:
+### Status Handling
+
+| Status                            | Action                              |
+| --------------------------------- | ----------------------------------- |
+| `HEALTHY`                         | Import state and proceed            |
+| `DEGRADED`                        | Warn, import state, proceed         |
+| `NOT_INSTALLED`/`NOT_INITIALIZED` | Check opt-out, fallback to markdown |
+| `MIGRATION_NEEDED`/`UNHEALTHY`    | Warn, fallback to markdown          |
+
+### If HEALTHY or DEGRADED
+
+1. **Import latest state**:
+
+   ```bash
+   br sync --import-only
+   .claude/scripts/beads/update-beads-state.sh --sync-import
+   ```
+
+2. **Use beads_rust for task lifecycle**:
    - `br ready` - Get next actionable task (JIT retrieval)
    - `br update <task-id> --status in_progress` - Mark task started
    - `br close <task-id>` - Mark task completed
    - Task state persists across context windows
 
-**If NOT_INSTALLED**, use markdown-based tracking from sprint.md.
+### If NOT_INSTALLED or NOT_INITIALIZED
+
+1. **Check for valid opt-out**:
+
+   ```bash
+   opt_out=$(.claude/scripts/beads/update-beads-state.sh --opt-out-check 2>/dev/null || echo "NO_OPT_OUT")
+   ```
+
+2. **If no valid opt-out**, log warning:
+
+   ```
+   Beads not available. Task tracking via markdown only.
+   Consider installing: cargo install beads_rust && br init
+   ```
+
+3. **Fallback**: Use markdown-based tracking from sprint.md.
+
+### Update State After Check
+
+```bash
+.claude/scripts/beads/update-beads-state.sh --health "$status"
+```
+
+### Beads Task Lifecycle
 
 **IMPORTANT**: Users should NOT run br commands manually. This agent handles the entire beads_rust lifecycle internally:
 
-1. On start: Run `br sync --import-only` then `br ready` to find first unblocked task
+1. On start: Run health check, then `br sync --import-only`, then `br ready` to find first unblocked task
 2. Before implementing: Auto-run `br update <task-id> --status in_progress`
 3. After completing: Auto-run `br close <task-id>`
-4. At session end: Run `br sync --flush-only` to persist state
+4. At session end: Run `br sync --flush-only` then record: `.claude/scripts/beads/update-beads-state.sh --sync-flush`
 5. Repeat until sprint complete
+
+### Protocol Reference
+
+See `.claude/protocols/beads-preflight.md` for full specification.
 
 ## Phase -1: Context Assessment & Parallel Task Splitting (CRITICAL—DO THIS FIRST)
 
@@ -451,6 +541,7 @@ wc -l grimoires/loa/prd.md grimoires/loa/sdd.md grimoires/loa/sprint.md grimoire
 Check `grimoires/loa/a2a/sprint-N/auditor-sprint-feedback.md`:
 
 **If exists + "CHANGES_REQUIRED":**
+
 - Sprint FAILED security audit
 - MUST address ALL CRITICAL and HIGH priority security issues
 - Address MEDIUM and LOW if feasible
@@ -458,10 +549,12 @@ Check `grimoires/loa/a2a/sprint-N/auditor-sprint-feedback.md`:
 - Quote each audit issue with your fix and verification steps
 
 **If exists + "APPROVED - LETS FUCKING GO":**
+
 - Sprint passed security audit
 - Proceed to check engineer feedback
 
 **If missing:**
+
 - No security audit yet
 - Proceed to check engineer feedback
 
@@ -470,15 +563,18 @@ Check `grimoires/loa/a2a/sprint-N/auditor-sprint-feedback.md`:
 Check `grimoires/loa/a2a/sprint-N/engineer-feedback.md`:
 
 **If exists + NOT "All good":**
+
 - Senior lead requested changes
 - Address all feedback items systematically
 - Update report with "Feedback Addressed" section
 
 **If exists + "All good":**
+
 - Sprint approved by senior lead
 - Proceed with new work or wait for security audit
 
 **If missing:**
+
 - First implementation
 - Proceed with implementing sprint tasks
 
@@ -487,6 +583,7 @@ Check `grimoires/loa/a2a/sprint-N/engineer-feedback.md`:
 Check `grimoires/loa/a2a/integration-context.md`:
 
 **If exists**, read for:
+
 - Context preservation requirements (link to source discussions)
 - Documentation locations (where to update status)
 - Commit message formats (e.g., "[LIN-123] Description")
@@ -549,6 +646,7 @@ When bugs or tech debt are discovered during implementation:
 This creates a new issue with semantic label `discovered-during:<parent-id>` for traceability.
 
 ### For each task:
+
 1. Implement according to specifications
 2. Follow established project patterns
 3. Write clean, maintainable, documented code
@@ -556,6 +654,7 @@ This creates a new issue with semantic label `discovered-during:<parent-id>` for
 5. Handle edge cases and errors gracefully
 
 **Testing Requirements:**
+
 - Comprehensive unit tests for all new code
 - Test both happy paths and error conditions
 - Include edge cases and boundary conditions
@@ -563,6 +662,7 @@ This creates a new issue with semantic label `discovered-during:<parent-id>` for
 - Ensure tests are readable and maintainable
 
 **Code Quality Standards:**
+
 - Self-documenting with clear names
 - Comments for complex logic
 - DRY principles
@@ -576,6 +676,7 @@ Create report at `grimoires/loa/a2a/sprint-N/reviewer.md`:
 Use template from `resources/templates/implementation-report.md`.
 
 Key sections:
+
 - Executive Summary
 - Tasks Completed (with files, approach, tests)
 - Technical Highlights
@@ -592,9 +693,10 @@ Key sections:
    - Never assume about vague feedback
 3. Address feedback systematically
 4. Generate updated report
-</workflow>
+   </workflow>
 
 <parallel_execution>
+
 ## When to Split
 
 - SMALL (<3,000 lines): Sequential
@@ -643,12 +745,13 @@ Agent 2: "Implement Task 1.3 - read acceptance criteria, review patterns, implem
 2. Verify no conflicts between implementations
 3. Run integration tests across all changes
 4. Generate unified report
-</parallel_execution>
+   </parallel_execution>
 
 <output_format>
 See `resources/templates/implementation-report.md` for full structure.
 
 Key sections:
+
 - Executive Summary
 - Tasks Completed (files, approach, tests)
 - Technical Highlights
@@ -656,17 +759,19 @@ Key sections:
 - Known Limitations
 - Verification Steps
 - Feedback Addressed (if iteration)
-</output_format>
+  </output_format>
 
 <success_criteria>
+
 - **Specific**: Every task implemented per acceptance criteria
 - **Measurable**: Test coverage metrics included
 - **Achievable**: All sprint tasks completed
 - **Relevant**: Implementation matches PRD/SDD
 - **Time-bound**: Report generated for review
-</success_criteria>
+  </success_criteria>
 
 <semver_requirements>
+
 ## Version Format: MAJOR.MINOR.PATCH
 
 - **MAJOR**: Breaking changes (incompatible API changes)
@@ -675,11 +780,11 @@ Key sections:
 
 ### When to Update Version
 
-| Change | Bump | Example |
-|--------|------|---------|
+| Change                     | Bump  | Example       |
+| -------------------------- | ----- | ------------- |
 | New feature implementation | MINOR | 0.1.0 → 0.2.0 |
-| Bug fix | PATCH | 0.2.0 → 0.2.1 |
-| Breaking API change | MAJOR | 0.2.1 → 1.0.0 |
+| Bug fix                    | PATCH | 0.2.0 → 0.2.1 |
+| Breaking API change        | MAJOR | 0.2.1 → 1.0.0 |
 
 ### Version Update Process
 
@@ -687,14 +792,16 @@ Key sections:
 2. Update package.json version
 3. Update CHANGELOG.md with sections: Added, Changed, Fixed, Removed, Security
 4. Reference version in completion comments
-</semver_requirements>
+   </semver_requirements>
 
 <task_planning>
+
 ## Task Planning (Required for Complex Tasks) (v0.19.0)
 
 ### What is a Complex Task?
 
 A task is complex if ANY of these apply:
+
 - Touches 3+ files/modules
 - Involves architectural decisions
 - Implementation path is unclear
@@ -710,30 +817,37 @@ For complex tasks, create a plan BEFORE writing code:
 ## Task Plan: [Task Name]
 
 ### Objective
+
 [What this task accomplishes]
 
 ### Approach
+
 1. [Step 1]
 2. [Step 2]
 3. [Step 3]
 
 ### Files to Modify
+
 - `path/to/file.ts` - [what changes]
 - `path/to/other.ts` - [what changes]
 
 ### Dependencies
+
 - [What must exist before this task]
 - [External services needed]
 
 ### Risks
+
 - [What could go wrong]
 - [Mitigation approach]
 
 ### Verification
+
 - [How we'll know it works]
 - [Specific tests to write]
 
 ### Acceptance Criteria
+
 - [ ] [Criterion 1]
 - [ ] [Criterion 2]
 ```
@@ -741,6 +855,7 @@ For complex tasks, create a plan BEFORE writing code:
 ### Plan Review
 
 Before implementing:
+
 1. Review plan for completeness
 2. Identify any blockers
 3. Confirm approach aligns with SDD
@@ -764,23 +879,27 @@ See `resources/REFERENCE.md` for complete checklists:
 - Versioning Checklist
 
 **Red Flags (immediate action required):**
+
 - No tests for new code
 - Hardcoded secrets
 - Skipped error handling
 - Ignored existing patterns
-</checklists>
+  </checklists>
 
 <beads_workflow>
+
 ## Beads Workflow (beads_rust)
 
 When beads_rust (`br`) is installed, the full task lifecycle:
 
 ### Session Start
+
 ```bash
 br sync --import-only  # Import latest state from JSONL
 ```
 
 ### Task Lifecycle
+
 ```bash
 # Get ready work
 .claude/scripts/beads/get-ready-work.sh 1 --ids-only
@@ -796,14 +915,16 @@ br close <task-id> --reason "Implemented per acceptance criteria"
 ```
 
 ### Semantic Labels for Tracking
-| Label | Purpose | Example |
-|-------|---------|---------|
-| `discovered-during:<id>` | Traceability | Auto-added by log-discovered-issue.sh |
-| `needs-review` | Review gate | `br label add <id> needs-review` |
-| `review-approved` | Passed review | `br label add <id> review-approved` |
-| `security` | Security concern | `br label add <id> security` |
+
+| Label                    | Purpose          | Example                               |
+| ------------------------ | ---------------- | ------------------------------------- |
+| `discovered-during:<id>` | Traceability     | Auto-added by log-discovered-issue.sh |
+| `needs-review`           | Review gate      | `br label add <id> needs-review`      |
+| `review-approved`        | Passed review    | `br label add <id> review-approved`   |
+| `security`               | Security concern | `br label add <id> security`          |
 
 ### Session End
+
 ```bash
 br sync --flush-only  # Export SQLite → JSONL before commit
 ```
@@ -812,6 +933,7 @@ br sync --flush-only  # Export SQLite → JSONL before commit
 </beads_workflow>
 
 <retrospective_postlude>
+
 ## Invisible Retrospective
 
 After completing main skill logic, scan session for learning opportunities.
@@ -821,6 +943,7 @@ After completing main skill logic, scan session for learning opportunities.
 ### Step 1: Check Configuration
 
 Read `.loa.config.yaml`:
+
 ```yaml
 invisible_retrospective:
   enabled: true|false
@@ -829,6 +952,7 @@ invisible_retrospective:
 ```
 
 **Exit Conditions** (skip all processing if any are true):
+
 - `invisible_retrospective.enabled: false` → Log action: DISABLED, exit
 - `invisible_retrospective.skills.implementing-tasks: false` → Log action: DISABLED, exit
 - **RECURSION GUARD**: If skill is `continuous-learning` → Exit silently (but this skill is `implementing-tasks`, so proceed)
@@ -837,19 +961,20 @@ invisible_retrospective:
 
 Search the current conversation for these patterns:
 
-| Signal | Detection Patterns | Weight |
-|--------|-------------------|--------|
-| Error Resolution | "error", "failed", "fixed", "resolved", "worked", "the issue was" | 3 |
-| Multiple Attempts | "tried", "attempted", "finally", "after several", "on the Nth try" | 3 |
-| Unexpected Behavior | "surprisingly", "actually", "turns out", "discovered", "realized" | 2 |
-| Workaround Found | "instead", "alternative", "workaround", "bypass", "the trick is" | 2 |
-| Pattern Discovery | "pattern", "convention", "always", "never", "this codebase" | 1 |
+| Signal              | Detection Patterns                                                 | Weight |
+| ------------------- | ------------------------------------------------------------------ | ------ |
+| Error Resolution    | "error", "failed", "fixed", "resolved", "worked", "the issue was"  | 3      |
+| Multiple Attempts   | "tried", "attempted", "finally", "after several", "on the Nth try" | 3      |
+| Unexpected Behavior | "surprisingly", "actually", "turns out", "discovered", "realized"  | 2      |
+| Workaround Found    | "instead", "alternative", "workaround", "bypass", "the trick is"   | 2      |
+| Pattern Discovery   | "pattern", "convention", "always", "never", "this codebase"        | 1      |
 
 **Scoring**: Sum weights for each candidate discovery.
 
 **Output**: List of candidate discoveries (max 5 per skill invocation, from config `max_candidates`)
 
 If no candidates found:
+
 - Log action: SKIPPED, candidates_found: 0
 - Exit silently
 
@@ -857,12 +982,12 @@ If no candidates found:
 
 For each candidate, evaluate these 4 gates:
 
-| Gate | Question | PASS Condition |
-|------|----------|----------------|
-| **Depth** | Required multiple investigation steps? | Not just a lookup - involved debugging, tracing, experimentation |
-| **Reusable** | Generalizable beyond this instance? | Applies to similar problems, not hyper-specific to this file |
-| **Trigger** | Can describe when to apply? | Clear symptoms or conditions that indicate this learning is relevant |
-| **Verified** | Solution confirmed working? | Tested or verified in this session, not theoretical |
+| Gate         | Question                               | PASS Condition                                                       |
+| ------------ | -------------------------------------- | -------------------------------------------------------------------- |
+| **Depth**    | Required multiple investigation steps? | Not just a lookup - involved debugging, tracing, experimentation     |
+| **Reusable** | Generalizable beyond this instance?    | Applies to similar problems, not hyper-specific to this file         |
+| **Trigger**  | Can describe when to apply?            | Clear symptoms or conditions that indicate this learning is relevant |
+| **Verified** | Solution confirmed working?            | Tested or verified in this session, not theoretical                  |
 
 **Scoring**: Each gate passed = 1 point. Max score = 4.
 
@@ -874,16 +999,16 @@ For each candidate, evaluate these 4 gates:
 
 Apply these redaction patterns:
 
-| Pattern | Replacement |
-|---------|-------------|
-| API Keys (`sk-*`, `ghp_*`, `AKIA*`) | `[REDACTED_API_KEY]` |
-| Private Keys (`-----BEGIN...PRIVATE KEY-----`) | `[REDACTED_PRIVATE_KEY]` |
-| JWT Tokens (`eyJ...`) | `[REDACTED_JWT]` |
-| Webhook URLs (`hooks.slack.com/*`, `hooks.discord.com/*`) | `[REDACTED_WEBHOOK]` |
-| File Paths (`/home/*/`, `/Users/*/`) | `/home/[USER]/` or `/Users/[USER]/` |
-| Email Addresses | `[REDACTED_EMAIL]` |
-| IP Addresses | `[REDACTED_IP]` |
-| Generic Secrets (`password=`, `secret=`, etc.) | `$key=[REDACTED]` |
+| Pattern                                                   | Replacement                         |
+| --------------------------------------------------------- | ----------------------------------- |
+| API Keys (`sk-*`, `ghp_*`, `AKIA*`)                       | `[REDACTED_API_KEY]`                |
+| Private Keys (`-----BEGIN...PRIVATE KEY-----`)            | `[REDACTED_PRIVATE_KEY]`            |
+| JWT Tokens (`eyJ...`)                                     | `[REDACTED_JWT]`                    |
+| Webhook URLs (`hooks.slack.com/*`, `hooks.discord.com/*`) | `[REDACTED_WEBHOOK]`                |
+| File Paths (`/home/*/`, `/Users/*/`)                      | `/home/[USER]/` or `/Users/[USER]/` |
+| Email Addresses                                           | `[REDACTED_EMAIL]`                  |
+| IP Addresses                                              | `[REDACTED_IP]`                     |
+| Generic Secrets (`password=`, `secret=`, etc.)            | `$key=[REDACTED]`                   |
 
 If any redactions occur, add `"redactions_applied": true` to trajectory log.
 
@@ -926,6 +1051,7 @@ IF any candidates score >= `surface_threshold`:
 
    ```markdown
    ## Learnings
+
    - [{timestamp}] [implementing-tasks] {ESCAPED Brief description} → skills-pending/{id}
    ```
 
@@ -933,6 +1059,7 @@ IF any candidates score >= `surface_threshold`:
 
 2. **Add to upstream queue** (for PR #143 integration):
    Create or update `grimoires/loa/a2a/compound/pending-upstream-check.json`:
+
    ```json
    {
      "queued_learnings": [
@@ -947,6 +1074,7 @@ IF any candidates score >= `surface_threshold`:
    ```
 
 3. **Show brief notification**:
+
    ```
    ────────────────────────────────────────────
    Learning Captured
@@ -959,6 +1087,7 @@ IF any candidates score >= `surface_threshold`:
    ```
 
 IF no candidates qualify:
+
 - Log action: SKIPPED
 - **NO user-visible output** (silent)
 
@@ -967,6 +1096,7 @@ IF no candidates qualify:
 On ANY error during postlude execution:
 
 1. Log to trajectory:
+
    ```json
    {
      "type": "invisible_retrospective",
@@ -985,6 +1115,7 @@ On ANY error during postlude execution:
 ### Session Limits
 
 Respect these limits from config:
+
 - `max_candidates`: Maximum candidates to evaluate per invocation (default: 5)
 - `max_extractions_per_session`: Maximum learnings to extract per session (default: 3)
 

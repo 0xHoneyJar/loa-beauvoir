@@ -390,6 +390,154 @@ run_mode:
     include_commits_by_sprint: true
 
 # -----------------------------------------------------------------------------
+# Beads-First Infrastructure (v1.29.0)
+# -----------------------------------------------------------------------------
+# Task tracking via beads_rust (br) is the EXPECTED DEFAULT.
+# Working without beads is treated as an abnormal state requiring explicit
+# acknowledgment. "We're building spaceships. Safety is paramount."
+beads:
+  # Mode: required | recommended | disabled
+  # - required: Block workflow if beads unavailable
+  # - recommended: Prompt for opt-out if unavailable (default)
+  # - disabled: No beads checks
+  mode: recommended
+
+  # Health check frequency
+  # - session: Once per session start
+  # - sprint: At sprint boundaries (default)
+  # - phase: At every workflow phase
+  health_check_frequency: sprint
+
+  # Opt-out configuration (for users without beads installed)
+  opt_out:
+    # Hours until opt-out expires and user must re-acknowledge
+    confirmation_interval_hours: 24
+    # Require reason when opting out
+    require_reason: true
+    # Maximum consecutive opt-outs before warning
+    max_consecutive: 3
+
+  # Autonomous mode configuration
+  autonomous:
+    # Require beads for /run and /autonomous workflows
+    requires_beads: true
+    # Allow DEGRADED status to proceed (warn only)
+    allow_degraded: true
+    # Maximum recovery attempts before halting
+    max_recovery_attempts: 3
+
+  # Size and staleness thresholds
+  thresholds:
+    # Warn when issues.jsonl exceeds this size
+    jsonl_warn_size_mb: 50
+    # Warn when beads.db exceeds this size
+    db_warn_size_mb: 100
+    # Warn when JSONL hasn't been synced in this many hours
+    sync_stale_hours: 24
+
+# -----------------------------------------------------------------------------
+# Persistent Memory (v1.28.0)
+# -----------------------------------------------------------------------------
+# Session-spanning observation storage with progressive disclosure.
+# Captures learnings, discoveries, and decisions for cross-session recall.
+# See: grimoires/loa/memory/README.md
+memory:
+  # Master toggle
+  enabled: true
+
+  # Capture settings
+  capture:
+    discoveries: true       # Capture code discoveries
+    errors: true           # Capture error-solution pairs
+    decisions: true        # Capture architecture decisions
+    patterns: true         # Capture recurring patterns
+
+  # Storage limits
+  max_observations: 10000  # Maximum observations before archiving oldest
+  retention_days: 90       # Archive observations older than this
+
+  # Progressive disclosure levels
+  disclosure:
+    index_tokens: 50       # Tokens per entry in index mode
+    summary_tokens: 200    # Tokens per entry in summary mode
+    full_tokens: 500       # Tokens for full observation
+
+  # Hook configuration
+  hooks:
+    post_tool: true        # Capture from PostToolUse hook
+    learning_signals:      # Patterns that trigger capture
+      - "discovered"
+      - "learned"
+      - "fixed"
+      - "resolved"
+      - "pattern"
+      - "insight"
+
+  # Privacy
+  privacy:
+    redact_sensitive: true # Redact content with <private> tags
+    exclude_tools:         # Tools to never capture from
+      - Read
+      - Glob
+      - Grep
+
+# -----------------------------------------------------------------------------
+# Destructive Command Guard (v1.28.0)
+# -----------------------------------------------------------------------------
+# Runtime safety layer that validates shell commands before execution.
+# Intercepts potentially dangerous operations and applies configurable policies.
+# See: .claude/protocols/destructive-command-guard.md
+destructive_command_guard:
+  # Master toggle - set to true to enable DCG
+  enabled: true
+
+  # Timeout for pattern matching (milliseconds)
+  timeout_ms: 100
+
+  # Security packs to load (core is always loaded)
+  # Each pack adds domain-specific patterns
+  packs:
+    # Database operations (SQL, MongoDB, Redis)
+    database: true
+    # Docker/container operations
+    docker: true
+    # Kubernetes operations (kubectl, helm)
+    kubernetes: false
+    # AWS CLI operations
+    cloud-aws: false
+    # Google Cloud operations
+    cloud-gcp: false
+    # Azure CLI operations
+    cloud-azure: false
+    # Terraform/OpenTofu operations
+    terraform: false
+
+  # Additional safe paths beyond defaults
+  # Paths must be absolute or use environment variables
+  safe_paths:
+    - "${PROJECT_ROOT}/tmp"
+    - "${PROJECT_ROOT}/cache"
+    # Add project-specific paths here
+    # - /app/cache
+
+  # Override default actions for specific patterns
+  # Useful for relaxing rules in specific contexts
+  overrides:
+    # Example: Allow git push --force with warning instead of block
+    # git_push_force:
+    #   action: WARN
+    #   reason: "Team workflow allows force push to feature branches"
+
+  # Run Mode integration
+  run_mode:
+    # Enable DCG during autonomous execution
+    enabled: true
+    # Log blocked commands to trajectory
+    audit_log: true
+    # Halt workflow after N blocked commands
+    halt_on_block_count: 3
+
+# -----------------------------------------------------------------------------
 # Simstim - HITL Accelerated Development (v1.24.0)
 # -----------------------------------------------------------------------------
 # Orchestrate complete development cycle (PRD → SDD → Sprint → Implementation)
