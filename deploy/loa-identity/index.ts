@@ -102,7 +102,7 @@ export async function initializeLoa(config: {
     beadsDir?: string;
   };
 }): Promise<{
-  identity: import("./identity-loader.js").IdentityLoader;
+  identity: import("../../.claude/lib/persistence/identity/identity-loader.js").IdentityLoader;
   recovery: import("./recovery/index.js").RecoveryEngine;
   memory: import("./memory/index.js").SessionMemoryManager;
   scheduler: import("./scheduler/index.js").Scheduler;
