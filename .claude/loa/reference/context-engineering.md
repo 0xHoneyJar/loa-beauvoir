@@ -6,13 +6,13 @@ Reference documentation for Loa's context management features.
 
 Anthropic's extended thinking with budget control. Uses `thinking.budget_tokens` (integer) for computational intensity.
 
-| Level | Budget Range | Token Reduction | Use Case |
-|-------|--------------|-----------------|----------|
-| **low** | 1K-4K | Baseline | Simple queries, translations |
-| **medium** | 8K-16K | 76% fewer tokens | Standard implementation |
-| **high** | 24K-32K | 48% fewer tokens | Complex architecture, security audit |
+| Level      | Budget Range | Token Reduction  | Use Case                             |
+| ---------- | ------------ | ---------------- | ------------------------------------ |
+| **low**    | 1K-4K        | Baseline         | Simple queries, translations         |
+| **medium** | 8K-16K       | 76% fewer tokens | Standard implementation              |
+| **high**   | 24K-32K      | 48% fewer tokens | Complex architecture, security audit |
 
-**Source**: [Anthropic Claude Opus 4.5 Announcement](https://www.anthropic.com/news/claude-opus-4-5)
+**Source**: [Anthropic Claude Opus 4.6 Announcement](https://www.anthropic.com/news/claude-opus-4-6)
 
 See `.loa.config.yaml.example` for configuration.
 
@@ -72,13 +72,13 @@ Persistent cross-session knowledge using grimoire-based storage. Achieves **39% 
 
 ### Memory Categories
 
-| Category | TTL | Min Confidence | Purpose |
-|----------|-----|----------------|---------|
-| `fact` | permanent | >=0.8 | Stable project truths |
-| `decision` | permanent | >=0.9 | Architecture decisions |
-| `learning` | 90d | >=0.7 | Extracted patterns |
-| `error` | 30d | >=0.6 | Error-solution pairs |
-| `preference` | permanent | >=0.5 | User preferences |
+| Category     | TTL       | Min Confidence | Purpose                |
+| ------------ | --------- | -------------- | ---------------------- |
+| `fact`       | permanent | >=0.8          | Stable project truths  |
+| `decision`   | permanent | >=0.9          | Architecture decisions |
+| `learning`   | 90d       | >=0.7          | Extracted patterns     |
+| `error`      | 30d       | >=0.6          | Error-solution pairs   |
+| `preference` | permanent | >=0.5          | User preferences       |
 
 ### Storage Location
 
@@ -113,9 +113,9 @@ grimoires/loa/memory/
 
 ```yaml
 effectiveness:
-  applications: 5      # Times retrieved
-  successes: 4         # Successful outcomes
-  score: 80            # Effectiveness (0-100)
+  applications: 5 # Times retrieved
+  successes: 4 # Successful outcomes
+  score: 80 # Effectiveness (0-100)
   last_applied: 2026-02-01T18:00:00Z
 ```
 
@@ -130,6 +130,7 @@ effectiveness:
 ## Attention Budget Enforcement (v1.11.0)
 
 High-search skills include `<attention_budget>` sections with:
+
 - Token thresholds (2K single, 5K accumulated, 15K session)
 - Skill-specific clearing triggers
 - Compliance checklists for audit-heavy operations
@@ -145,12 +146,12 @@ High-search skills include `<attention_budget>` sections with:
 
 Context optimization for multi-subagent workflows, leveraging RLM research patterns.
 
-| Component | Script | Purpose |
-|-----------|--------|---------|
-| Semantic Cache | `cache-manager.sh` | Cross-session result caching |
-| Condensation | `condense.sh` | Result compression (~20-50 tokens) |
-| Early-Exit | `early-exit.sh` | Parallel subagent coordination |
-| Semantic Recovery | `context-manager.sh --query` | Query-based section selection |
+| Component         | Script                       | Purpose                            |
+| ----------------- | ---------------------------- | ---------------------------------- |
+| Semantic Cache    | `cache-manager.sh`           | Cross-session result caching       |
+| Condensation      | `condense.sh`                | Result compression (~20-50 tokens) |
+| Early-Exit        | `early-exit.sh`              | Parallel subagent coordination     |
+| Semantic Recovery | `context-manager.sh --query` | Query-based section selection      |
 
 ### Usage Examples
 

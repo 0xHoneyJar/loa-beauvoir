@@ -19,6 +19,7 @@ Analysis of OpenAI's "A Practical Guide to Building Agents" (34-page guide) agai
 ### Agent Definition
 
 OpenAI defines agents as systems that:
+
 - **Autonomously complete workflows** on behalf of users (not just automate user-initiated tasks)
 - Use LLMs to **manage workflow execution and decision-making**
 - Can **proactively correct behavior** when needed
@@ -26,19 +27,19 @@ OpenAI defines agents as systems that:
 
 ### Three Core Components
 
-| Component | OpenAI Definition | Loa Equivalent |
-|-----------|-------------------|----------------|
-| **Model (LLM)** | Drives reasoning and decision-making | Claude via skills, with `effort_hint` levels |
-| **Tools** | External functions/APIs for actions | Bash, scripts, MCP servers |
-| **Instructions** | Clear guidelines defining behavior | SKILL.md files (3-level architecture) |
+| Component        | OpenAI Definition                    | Loa Equivalent                               |
+| ---------------- | ------------------------------------ | -------------------------------------------- |
+| **Model (LLM)**  | Drives reasoning and decision-making | Claude via skills, with `effort_hint` levels |
+| **Tools**        | External functions/APIs for actions  | Bash, scripts, MCP servers                   |
+| **Instructions** | Clear guidelines defining behavior   | SKILL.md files (3-level architecture)        |
 
 ### Tool Categories
 
-| Category | OpenAI | Loa Equivalent |
-|----------|--------|----------------|
-| Data Retrieval | Databases, PDFs, web searches | Grep, Glob, Read, WebFetch, MCP servers |
-| Action Execution | Emails, CRM updates | Bash, Edit, Write, gh CLI |
-| Orchestration | Agents serving as tools for other agents | Subagents, Task tool with specialized agents |
+| Category         | OpenAI                                   | Loa Equivalent                               |
+| ---------------- | ---------------------------------------- | -------------------------------------------- |
+| Data Retrieval   | Databases, PDFs, web searches            | Grep, Glob, Read, WebFetch, MCP servers      |
+| Action Execution | Emails, CRM updates                      | Bash, Edit, Write, gh CLI                    |
+| Orchestration    | Agents serving as tools for other agents | Subagents, Task tool with specialized agents |
 
 ---
 
@@ -46,20 +47,20 @@ OpenAI defines agents as systems that:
 
 ### OpenAI Patterns
 
-| Pattern | Description | When to Use |
-|---------|-------------|-------------|
-| **Single-Agent** | One agent with tools in a loop | Simple workflows, clear task boundaries |
-| **Multi-Agent (Manager)** | Central coordinator invoking specialists | Complex tasks requiring expertise domains |
-| **Multi-Agent (Decentralized)** | Peer agents with handoffs | Flexible workflows, unclear routing |
+| Pattern                         | Description                              | When to Use                               |
+| ------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| **Single-Agent**                | One agent with tools in a loop           | Simple workflows, clear task boundaries   |
+| **Multi-Agent (Manager)**       | Central coordinator invoking specialists | Complex tasks requiring expertise domains |
+| **Multi-Agent (Decentralized)** | Peer agents with handoffs                | Flexible workflows, unclear routing       |
 
 ### Loa's Current Architecture
 
-| Pattern | Implementation | OpenAI Alignment |
-|---------|----------------|------------------|
-| **Single-Agent** | Individual skills (`/implement`, `/audit`) | Matches single-agent pattern |
-| **Multi-Agent (Manager)** | `/autonomous` command (8-phase orchestrator) | Matches manager pattern |
+| Pattern                         | Implementation                                              | OpenAI Alignment              |
+| ------------------------------- | ----------------------------------------------------------- | ----------------------------- |
+| **Single-Agent**                | Individual skills (`/implement`, `/audit`)                  | Matches single-agent pattern  |
+| **Multi-Agent (Manager)**       | `/autonomous` command (8-phase orchestrator)                | Matches manager pattern       |
 | **Multi-Agent (Decentralized)** | Run Mode feedback loops (Engineer <-> Reviewer <-> Auditor) | Matches decentralized pattern |
-| **Hub-and-Spoke** | `/validate` with subagents (arch, security, test) | Matches cookbook pattern |
+| **Hub-and-Spoke**               | `/validate` with subagents (arch, security, test)           | Matches cookbook pattern      |
 
 **Assessment**: Loa covers all three orchestration patterns.
 
@@ -68,6 +69,7 @@ OpenAI defines agents as systems that:
 **OpenAI**: "Handoffs are a one-way transfer that allow an agent to delegate to another agent."
 
 **Loa**:
+
 - A2A files (`reviewer.md` -> `engineer-feedback.md` -> `auditor-sprint-feedback.md`)
 - Explicit handoff via file-based communication
 - Stateful tracking in `.run/state.json`
@@ -80,30 +82,30 @@ OpenAI defines agents as systems that:
 
 ### OpenAI Guardrail Types
 
-| Type | Purpose | Execution |
-|------|---------|-----------|
-| **Input Guardrails** | Validate user input before agent runs | Parallel or blocking |
-| **Output Guardrails** | Validate agent output after completion | Sequential |
-| **Tool Guardrails** | Validate before/after tool execution | Wraps function tools |
+| Type                  | Purpose                                | Execution            |
+| --------------------- | -------------------------------------- | -------------------- |
+| **Input Guardrails**  | Validate user input before agent runs  | Parallel or blocking |
+| **Output Guardrails** | Validate agent output after completion | Sequential           |
+| **Tool Guardrails**   | Validate before/after tool execution   | Wraps function tools |
 
 ### Loa's Current Guardrails
 
-| Loa Feature | OpenAI Equivalent | Implementation |
-|-------------|-------------------|----------------|
-| **Invisible Prompt Enhancement** | Input Guardrail | PTCF scoring < 4 triggers enhancement |
-| **Quality Gates (4-gate)** | Output Guardrail | Depth, Reusability, Trigger, Verification |
-| **Run Mode ICE Layer** | Tool Guardrail | Git operation safety wrapper |
-| **Circuit Breaker** | Rate limiting + failure detection | Same issue 3x, no progress 5x |
-| **Attention Budget** | Token exhaustion prevention | 2K single, 5K accumulated, 15K session |
+| Loa Feature                      | OpenAI Equivalent                 | Implementation                            |
+| -------------------------------- | --------------------------------- | ----------------------------------------- |
+| **Invisible Prompt Enhancement** | Input Guardrail                   | PTCF scoring < 4 triggers enhancement     |
+| **Quality Gates (4-gate)**       | Output Guardrail                  | Depth, Reusability, Trigger, Verification |
+| **Run Mode ICE Layer**           | Tool Guardrail                    | Git operation safety wrapper              |
+| **Circuit Breaker**              | Rate limiting + failure detection | Same issue 3x, no progress 5x             |
+| **Attention Budget**             | Token exhaustion prevention       | 2K single, 5K accumulated, 15K session    |
 
 ### Gaps Identified
 
-| Gap | OpenAI Pattern | Potential Loa Enhancement |
-|-----|----------------|---------------------------|
-| **PII Filtering** | Explicit PII filter guardrail | Currently only in retrospective sanitization (HIGH-001 fix) |
-| **Relevance Classifier** | Input relevance validation | No explicit "is this relevant to the skill?" check |
-| **Tool Risk Assessment** | Categorize tools by risk level | `danger_level` in skill schema exists but not enforced |
-| **Tripwire Pattern** | Immediate halt on violation | Circuit breaker halts on repeated issues, not first |
+| Gap                      | OpenAI Pattern                 | Potential Loa Enhancement                                   |
+| ------------------------ | ------------------------------ | ----------------------------------------------------------- |
+| **PII Filtering**        | Explicit PII filter guardrail  | Currently only in retrospective sanitization (HIGH-001 fix) |
+| **Relevance Classifier** | Input relevance validation     | No explicit "is this relevant to the skill?" check          |
+| **Tool Risk Assessment** | Categorize tools by risk level | `danger_level` in skill schema exists but not enforced      |
+| **Tripwire Pattern**     | Immediate halt on violation    | Circuit breaker halts on repeated issues, not first         |
 
 ---
 
@@ -118,9 +120,9 @@ OpenAI defines agents as systems that:
 ```yaml
 # Proposed addition to skill index.yaml
 input_guardrails:
-  relevance_check: true      # Is this request relevant to this skill?
-  pii_filter: true           # Block/redact PII before processing
-  injection_detection: true  # Detect prompt injection attempts
+  relevance_check: true # Is this request relevant to this skill?
+  pii_filter: true # Block/redact PII before processing
+  injection_detection: true # Detect prompt injection attempts
 ```
 
 **Implementation**: Add `<input_guardrails>` section to SKILL.md files (mirroring `<retrospective_postlude>` pattern).
@@ -172,9 +174,9 @@ danger_level: critical  # Block in autonomous mode
 guardrails:
   input:
     pii_filter:
-      mode: blocking      # Must complete before skill runs
+      mode: blocking # Must complete before skill runs
     relevance_check:
-      mode: parallel      # Runs concurrently, can tripwire
+      mode: parallel # Runs concurrently, can tripwire
     injection_detection:
       mode: blocking
 ```
@@ -190,8 +192,8 @@ guardrails:
 ```yaml
 # .loa.config.yaml
 circuit_breaker:
-  same_issue_threshold: 3      # Existing behavior
-  tripwire_on_critical: true   # NEW: Halt on first CRITICAL finding
+  same_issue_threshold: 3 # Existing behavior
+  tripwire_on_critical: true # NEW: Halt on first CRITICAL finding
 ```
 
 ---
@@ -200,24 +202,24 @@ circuit_breaker:
 
 ### What Loa Does Better Than OpenAI Guide
 
-| Aspect | Loa Advantage |
-|--------|---------------|
-| **Memory Persistence** | NOTES.md + trajectory logs survive sessions (OpenAI guide doesn't cover) |
-| **Learning Loop** | Invisible Retrospective extracts learnings automatically |
-| **Quality Gates** | 4-gate filter more sophisticated than simple pass/fail |
-| **File-Based Handoffs** | Auditable, persistent, recoverable after crashes |
-| **Three-Zone Model** | Clear ownership model (System/State/App) |
-| **Effort Parameter** | Token budget control per skill |
+| Aspect                  | Loa Advantage                                                            |
+| ----------------------- | ------------------------------------------------------------------------ |
+| **Memory Persistence**  | NOTES.md + trajectory logs survive sessions (OpenAI guide doesn't cover) |
+| **Learning Loop**       | Invisible Retrospective extracts learnings automatically                 |
+| **Quality Gates**       | 4-gate filter more sophisticated than simple pass/fail                   |
+| **File-Based Handoffs** | Auditable, persistent, recoverable after crashes                         |
+| **Three-Zone Model**    | Clear ownership model (System/State/App)                                 |
+| **Effort Parameter**    | Token budget control per skill                                           |
 
 ### What Loa Could Adopt from OpenAI Guide
 
-| Pattern | Priority | Effort | Impact |
-|---------|----------|--------|--------|
-| Input Guardrails (relevance + PII) | HIGH | Medium | Prevents wasted execution |
-| Tool Risk Enforcement | MEDIUM | Low | Safety improvement |
-| Parallel Guardrail Mode | MEDIUM | Medium | Performance |
-| Tripwire on Critical | LOW | Low | Faster failure detection |
-| Handoff Terminology | LOW | Low | Documentation clarity |
+| Pattern                            | Priority | Effort | Impact                    |
+| ---------------------------------- | -------- | ------ | ------------------------- |
+| Input Guardrails (relevance + PII) | HIGH     | Medium | Prevents wasted execution |
+| Tool Risk Enforcement              | MEDIUM   | Low    | Safety improvement        |
+| Parallel Guardrail Mode            | MEDIUM   | Medium | Performance               |
+| Tripwire on Critical               | LOW      | Low    | Faster failure detection  |
+| Handoff Terminology                | LOW      | Low    | Documentation clarity     |
 
 ---
 
@@ -248,12 +250,14 @@ circuit_breaker:
 ## References
 
 **Primary Sources**:
+
 - [OpenAI Guide (PDF)](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf)
 - [OpenAI Agents SDK Guardrails](https://openai.github.io/openai-agents-python/guardrails/)
 - [OpenAI Multi-Agent Cookbook](https://cookbook.openai.com/examples/agents_sdk/multi-agent-portfolio-collaboration/multi_agent_portfolio_collaboration)
 - [AIBase Summary](https://www.aibase.com/news/17299)
 
 **Loa Internal References**:
+
 - `.claude/protocols/run-mode.md` - Safety model, circuit breaker
 - `.claude/protocols/feedback-loops.md` - Quality gates
 - `.claude/protocols/subagent-invocation.md` - Multi-agent patterns
@@ -261,4 +265,4 @@ circuit_breaker:
 
 ---
 
-*Research conducted by Claude Opus 4.5 for Loa Framework improvement analysis*
+_Research conducted by Claude Opus 4.6 for Loa Framework improvement analysis_

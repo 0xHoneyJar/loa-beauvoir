@@ -11,8 +11,9 @@
 # Models:
 #   gpt-5.2              OpenAI GPT-5.2
 #   gpt-5.2-codex        OpenAI GPT-5.2 Codex
-#   opus                 Claude Opus 4.5 (alias for claude-opus-4.5)
-#   claude-opus-4.5      Claude Opus 4.5
+#   gpt-5.3-codex        OpenAI GPT-5.3 Codex
+#   opus                 Claude Opus 4.6 (alias for claude-opus-4.6)
+#   claude-opus-4.6      Claude Opus 4.6
 #   gemini-2.0           Google Gemini 2.0 (future)
 #
 # Modes:
@@ -63,35 +64,75 @@ RETRY_BASE_DELAY=5
 declare -A MODEL_PROVIDERS=(
     ["gpt-5.2"]="openai"
     ["gpt-5.2-codex"]="openai"
+    ["gpt-5.3-codex"]="openai"
     ["opus"]="anthropic"
-    ["claude-opus-4.5"]="anthropic"
+    ["claude-opus-4.6"]="anthropic"
+    ["claude-opus-4.5"]="anthropic"    # Backward compat alias → 4.6
     ["gemini-2.0"]="google"
 )
 
 declare -A MODEL_IDS=(
     ["gpt-5.2"]="gpt-5.2"
     ["gpt-5.2-codex"]="gpt-5.2-codex"
-    ["opus"]="claude-opus-4-5-20251101"
-    ["claude-opus-4.5"]="claude-opus-4-5-20251101"
+    ["gpt-5.3-codex"]="gpt-5.3-codex"
+    ["opus"]="claude-opus-4-6"
+    ["claude-opus-4.6"]="claude-opus-4-6"
+    ["claude-opus-4.5"]="claude-opus-4-6"              # Alias → current
     ["gemini-2.0"]="gemini-2.0-flash"
 )
 
 # Cost per 1K tokens (approximate, 2026-02 pricing)
+# Opus 4.6: $5/$25 per MTok → $0.005/$0.025 per 1K tokens
 declare -A COST_INPUT=(
     ["gpt-5.2"]="0.01"
     ["gpt-5.2-codex"]="0.015"
-    ["opus"]="0.015"
-    ["claude-opus-4.5"]="0.015"
+    ["gpt-5.3-codex"]="0.015"
+    ["opus"]="0.005"
+    ["claude-opus-4.6"]="0.005"
+    ["claude-opus-4.5"]="0.005"        # Alias → 4.6 pricing
     ["gemini-2.0"]="0.005"
 )
 
 declare -A COST_OUTPUT=(
     ["gpt-5.2"]="0.03"
     ["gpt-5.2-codex"]="0.06"
-    ["opus"]="0.075"
-    ["claude-opus-4.5"]="0.075"
+    ["gpt-5.3-codex"]="0.06"
+    ["opus"]="0.025"
+    ["claude-opus-4.6"]="0.025"
+    ["claude-opus-4.5"]="0.025"        # Alias → 4.6 pricing
     ["gemini-2.0"]="0.015"
 )
+
+# =============================================================================
+# Registry Validation
+# =============================================================================
+
+# Ensures all model keys are consistent across all four maps.
+# Catches cross-PR inconsistencies at startup rather than at call time.
+validate_model_registry() {
+    local errors=0
+    for key in "${!MODEL_IDS[@]}"; do
+        if [[ -z "${MODEL_PROVIDERS[$key]+x}" ]]; then
+            echo "ERROR: MODEL_PROVIDERS missing key: $key" >&2
+            ((errors+=1))
+        fi
+        if [[ -z "${COST_INPUT[$key]+x}" ]]; then
+            echo "ERROR: COST_INPUT missing key: $key" >&2
+            ((errors+=1))
+        fi
+        if [[ -z "${COST_OUTPUT[$key]+x}" ]]; then
+            echo "ERROR: COST_OUTPUT missing key: $key" >&2
+            ((errors+=1))
+        fi
+    done
+    if [[ $errors -gt 0 ]]; then
+        echo "ERROR: Model registry has $errors inconsistencies. Fix MODEL_* arrays in model-adapter.sh" >&2
+        return 1
+    fi
+    return 0
+}
+
+validate_model_registry || exit 2
 
 # =============================================================================
 # Logging
@@ -217,10 +258,10 @@ EOF
     curl_config=$(mktemp)
     trap "rm -f '$curl_config'" RETURN
     chmod 600 "$curl_config"
-    cat > "$curl_config" <<CURLCFG
+    cat > "$curl_config" <<'CURLCFG'
 header = "Content-Type: application/json"
-header = "Authorization: Bearer ${api_key}"
 CURLCFG
+    echo "header = \"Authorization: Bearer ${api_key}\"" >> "$curl_config"
 
     response=$(curl -s --max-time "$timeout" \
         --config "$curl_config" \
@@ -266,11 +307,11 @@ EOF
     curl_config=$(mktemp)
     trap "rm -f '$curl_config'" RETURN
     chmod 600 "$curl_config"
-    cat > "$curl_config" <<CURLCFG
-header = "x-api-key: ${api_key}"
+    cat > "$curl_config" <<'CURLCFG'
 header = "anthropic-version: 2023-06-01"
 header = "content-type: application/json"
 CURLCFG
+    echo "header = \"x-api-key: ${api_key}\"" >> "$curl_config"
 
     response=$(curl -s --max-time "$timeout" \
         --config "$curl_config" \
@@ -542,7 +583,8 @@ Usage: model-adapter.sh --model <model> --mode <mode> [options]
 
 Models:
   gpt-5.2, gpt-5.2-codex    OpenAI GPT-5.2 variants
-  opus, claude-opus-4.5     Claude Opus 4.5
+  gpt-5.3-codex             OpenAI GPT-5.3 Codex
+  opus, claude-opus-4.6     Claude Opus 4.6 (claude-opus-4.5 also accepted)
   gemini-2.0                Google Gemini 2.0 (future)
 
 Modes:

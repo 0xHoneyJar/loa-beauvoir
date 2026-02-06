@@ -18,33 +18,38 @@ Skill Invocation → Danger Level Check → Mode-Specific Enforcement → Execut
 
 ## Danger Levels
 
-| Level | Description | Examples |
-|-------|-------------|----------|
-| **safe** | Read-only operations, no side effects | `discovering-requirements`, `reviewing-code` |
-| **moderate** | Writes to project files | `implementing-tasks`, `planning-sprints` |
-| **high** | Creates infrastructure, external effects | `deploying-infrastructure` |
-| **critical** | Full autonomous control, irreversible actions | `autonomous-agent` |
+| Level        | Description                                   | Examples                                     |
+| ------------ | --------------------------------------------- | -------------------------------------------- |
+| **safe**     | Read-only operations, no side effects         | `discovering-requirements`, `reviewing-code` |
+| **moderate** | Writes to project files                       | `implementing-tasks`, `planning-sprints`     |
+| **high**     | Creates infrastructure, external effects      | `deploying-infrastructure`                   |
+| **critical** | Full autonomous control, irreversible actions | `autonomous-agent`                           |
 
 ---
 
 ## Current Skill Assignments
 
-| Skill | Danger Level | Rationale |
-|-------|--------------|-----------|
-| `discovering-requirements` | safe | Read-only analysis |
-| `designing-architecture` | safe | Read-only design |
-| `planning-sprints` | safe | Read-only planning |
-| `implementing-tasks` | moderate | Writes code files |
-| `reviewing-code` | safe | Read-only review |
-| `auditing-security` | safe | Read-only audit |
-| `deploying-infrastructure` | high | Creates infrastructure |
-| `run-mode` | high | Autonomous execution |
-| `autonomous-agent` | critical | Full autonomous control |
-| `riding-codebase` | safe | Read-only analysis |
-| `mounting-framework` | moderate | Writes framework files |
-| `continuous-learning` | safe | Read-only extraction |
-| `translating-for-executives` | safe | Read-only translation |
-| `enhancing-prompts` | safe | Read-only enhancement |
+<!-- PROTO-002: Synchronized with index.yaml sources of truth (2026-02-06) -->
+
+| Skill                        | Danger Level | Rationale                                              |
+| ---------------------------- | ------------ | ------------------------------------------------------ |
+| `discovering-requirements`   | moderate     | Writes analysis artifacts to grimoire                  |
+| `designing-architecture`     | moderate     | Writes design documents to grimoire                    |
+| `planning-sprints`           | moderate     | Writes sprint plans and ledger state                   |
+| `implementing-tasks`         | moderate     | Writes code files                                      |
+| `reviewing-code`             | moderate     | Writes review feedback artifacts                       |
+| `auditing-security`          | high         | Writes audit reports, may trigger emergency procedures |
+| `deploying-infrastructure`   | high         | Creates infrastructure                                 |
+| `run-mode`                   | high         | Autonomous execution                                   |
+| `autonomous-agent`           | critical     | Full autonomous control                                |
+| `riding-codebase`            | moderate     | Writes reality artifacts to grimoire                   |
+| `mounting-framework`         | safe         | Read-only framework setup (writes only to .claude/)    |
+| `continuous-learning`        | safe         | Read-only extraction                                   |
+| `translating-for-executives` | safe         | Read-only translation                                  |
+| `enhancing-prompts`          | safe         | Read-only enhancement                                  |
+| `flatline-knowledge`         | safe         | Read-only knowledge retrieval                          |
+| `simstim-workflow`           | moderate     | Orchestrates multi-step HITL workflow                  |
+| `browsing-constructs`        | safe         | Read-only registry browsing                            |
 
 ---
 
@@ -54,14 +59,15 @@ Skill Invocation → Danger Level Check → Mode-Specific Enforcement → Execut
 
 User is present and can respond to prompts.
 
-| Level | Behavior |
-|-------|----------|
-| **safe** | Execute immediately, no confirmation |
-| **moderate** | Execute with brief notice in output |
-| **high** | Require explicit confirmation before execute |
+| Level        | Behavior                                     |
+| ------------ | -------------------------------------------- |
+| **safe**     | Execute immediately, no confirmation         |
+| **moderate** | Execute with brief notice in output          |
+| **high**     | Require explicit confirmation before execute |
 | **critical** | Require confirmation WITH reason explanation |
 
 **Confirmation Flow (high/critical)**:
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ ⚠️  High-Risk Skill Confirmation                           │
@@ -82,14 +88,15 @@ User is present and can respond to prompts.
 
 Running via `/run` command without human-in-the-loop.
 
-| Level | Behavior |
-|-------|----------|
-| **safe** | Execute immediately |
-| **moderate** | Execute with enhanced trajectory logging |
-| **high** | BLOCK unless `--allow-high` flag provided |
-| **critical** | ALWAYS BLOCK (no override available) |
+| Level        | Behavior                                  |
+| ------------ | ----------------------------------------- |
+| **safe**     | Execute immediately                       |
+| **moderate** | Execute with enhanced trajectory logging  |
+| **high**     | BLOCK unless `--allow-high` flag provided |
+| **critical** | ALWAYS BLOCK (no override available)      |
 
 **Blocking Message (autonomous)**:
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ 🛑 Skill Blocked in Autonomous Mode                        │
@@ -111,12 +118,12 @@ Running via `/run` command without human-in-the-loop.
 
 ## Decision Matrix
 
-| Danger Level | Interactive | Autonomous | Autonomous + `--allow-high` |
-|--------------|-------------|------------|----------------------------|
-| safe | ✅ Execute | ✅ Execute | ✅ Execute |
-| moderate | ✅ Execute (notice) | ✅ Execute (log) | ✅ Execute (log) |
-| high | ⚠️ Confirm | 🛑 BLOCK | ⚠️ Execute (warn + log) |
-| critical | ⚠️ Confirm + Reason | 🛑 BLOCK | 🛑 BLOCK (no override) |
+| Danger Level | Interactive         | Autonomous       | Autonomous + `--allow-high` |
+| ------------ | ------------------- | ---------------- | --------------------------- |
+| safe         | ✅ Execute          | ✅ Execute       | ✅ Execute                  |
+| moderate     | ✅ Execute (notice) | ✅ Execute (log) | ✅ Execute (log)            |
+| high         | ⚠️ Confirm          | 🛑 BLOCK         | ⚠️ Execute (warn + log)     |
+| critical     | ⚠️ Confirm + Reason | 🛑 BLOCK         | 🛑 BLOCK (no override)      |
 
 ---
 
@@ -132,11 +139,13 @@ Enables execution of `high` danger level skills in autonomous mode.
 ```
 
 **Behavior**:
+
 - Allows `high` skills to execute
 - Logs warning to trajectory
 - Does NOT allow `critical` skills (always blocked)
 
 **Trajectory Entry**:
+
 ```json
 {
   "type": "danger_level",
@@ -211,11 +220,11 @@ All danger level decisions are logged:
 
 ### Log Actions
 
-| Action | Meaning |
-|--------|---------|
-| `PROCEED` | Execution allowed |
-| `WARN` | Execution allowed with warning |
-| `BLOCK` | Execution prevented |
+| Action    | Meaning                        |
+| --------- | ------------------------------ |
+| `PROCEED` | Execution allowed              |
+| `WARN`    | Execution allowed with warning |
+| `BLOCK`   | Execution prevented            |
 
 ---
 
@@ -270,6 +279,7 @@ These invariants MUST NOT be violated:
 **Cause**: Skill has `high` or `critical` danger level.
 
 **Solution**:
+
 - For `high`: Use `--allow-high` flag
 - For `critical`: Cannot override. Run interactively instead.
 
@@ -278,6 +288,7 @@ These invariants MUST NOT be violated:
 **Cause**: Running `high`/`critical` skill in interactive mode.
 
 **Solution**:
+
 - Use `/run` command for autonomous execution
 - Or pipe `yes` to confirmation (not recommended)
 
@@ -297,4 +308,4 @@ These invariants MUST NOT be violated:
 
 ---
 
-*Protocol Version 1.0.0 | Input Guardrails & Tool Risk Enforcement v1.20.0*
+_Protocol Version 1.0.0 | Input Guardrails & Tool Risk Enforcement v1.20.0_

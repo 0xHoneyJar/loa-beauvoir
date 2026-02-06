@@ -61,7 +61,8 @@ done
 [ $count -ge 2 ] && echo "AI_OPERATOR"
 ```
 
-**Verdict**: 
+**Verdict**:
+
 - Any Clawdbot config/binary → `AI_OPERATOR`
 - 2+ moltbot signature files → `AI_OPERATOR` (high confidence)
 - 1 signature file → weak signal, continue to next check
@@ -72,11 +73,13 @@ Check for `AGENTS.md` in repository root:
 
 ```markdown
 <!-- AGENTS.md -->
+
 # AI Agent Instructions
 
 This repository is configured for AI-assisted development.
 
 ## Active Agents
+
 - clawdbot: PR automation
 - cursor: code completion
 ```
@@ -89,8 +92,9 @@ Check for automated heartbeat patterns in `.claude/HEARTBEAT.md`:
 
 ```markdown
 <!-- HEARTBEAT.md -->
+
 Last activity: 2026-01-31T14:00:00Z
-Agent: claude-opus-4-5-20251101
+Agent: claude-opus-4-6
 Session: autonomous-run-abc123
 ```
 
@@ -117,27 +121,27 @@ fi
 
 When `AI_OPERATOR` detected:
 
-| Aspect | Behavior |
-|--------|----------|
-| **Quality Gates** | All gates mandatory (no skip) |
-| **Audit Requirement** | Must pass audit before PR |
-| **Deploy Approval** | Blocked (requires human) |
-| **Remediation Loops** | Max 3, then escalate |
-| **Context Warnings** | Aggressive (80K soft limit) |
-| **Skill Wrapping** | Auto-wrap with `/autonomous` |
+| Aspect                | Behavior                      |
+| --------------------- | ----------------------------- |
+| **Quality Gates**     | All gates mandatory (no skip) |
+| **Audit Requirement** | Must pass audit before PR     |
+| **Deploy Approval**   | Blocked (requires human)      |
+| **Remediation Loops** | Max 3, then escalate          |
+| **Context Warnings**  | Aggressive (80K soft limit)   |
+| **Skill Wrapping**    | Auto-wrap with `/autonomous`  |
 
 ### Human Operator Mode
 
 When `HUMAN_OPERATOR` detected:
 
-| Aspect | Behavior |
-|--------|----------|
-| **Quality Gates** | Advisory (can skip with justification) |
-| **Audit Requirement** | Recommended, not mandatory |
-| **Deploy Approval** | Human is the approver |
-| **Remediation Loops** | Unlimited (human judgment) |
-| **Context Warnings** | Standard (150K hard limit) |
-| **Skill Wrapping** | Skills invoked directly |
+| Aspect                | Behavior                               |
+| --------------------- | -------------------------------------- |
+| **Quality Gates**     | Advisory (can skip with justification) |
+| **Audit Requirement** | Recommended, not mandatory             |
+| **Deploy Approval**   | Human is the approver                  |
+| **Remediation Loops** | Unlimited (human judgment)             |
+| **Context Warnings**  | Standard (150K hard limit)             |
+| **Skill Wrapping**    | Skills invoked directly                |
 
 ## Auto-Wrapping Logic
 
@@ -149,6 +153,7 @@ Auto-wrapped: /autonomous --phase=implementation --target=sprint-1
 ```
 
 This ensures:
+
 1. Proper phase context established
 2. Quality gates enforced
 3. Trajectory logging active
@@ -227,7 +232,12 @@ autonomous_agent:
 Detection events logged to trajectory:
 
 ```jsonl
-{"event": "operator_detected", "type": "AI_OPERATOR", "method": "env_var", "confidence": "high"}
+{
+  "event": "operator_detected",
+  "type": "AI_OPERATOR",
+  "method": "env_var",
+  "confidence": "high"
+}
 ```
 
 ## Security Considerations

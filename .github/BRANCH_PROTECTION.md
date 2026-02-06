@@ -12,7 +12,7 @@ Navigate to: **Settings > Branches > Branch protection rules > Add rule**
 - **Require a pull request before merging**: ✅ Enabled
   - **Required approving reviews**: 1
   - **Dismiss stale pull request approvals when new commits are pushed**: ✅
-  - **Require review from Code Owners**: Optional (enable if CODEOWNERS file exists)
+  - **Require review from Code Owners**: ✅ Enabled (CODEOWNERS file exists)
 
 ### Status Checks
 
@@ -21,10 +21,10 @@ Navigate to: **Settings > Branches > Branch protection rules > Add rule**
 
 **Required status checks** (must all pass):
 
-| Check Name | Purpose |
-|------------|---------|
-| `Template Protection` | Blocks forbidden files (prd.md, sdd.md, sprint.md, a2a/*, etc.) |
-| `Validate Framework Files` | Ensures required skills/commands/docs exist |
+| Check Name                 | Purpose                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| `Template Protection`      | Blocks forbidden files (prd.md, sdd.md, sprint.md, a2a/\*, etc.) |
+| `Validate Framework Files` | Ensures required skills/commands/docs exist                      |
 
 ### Additional Protection
 
@@ -72,7 +72,7 @@ rules:
       strict_required_status_checks_policy: true
       required_status_checks:
         - context: "Template Protection"
-          integration_id: 15368  # GitHub Actions
+          integration_id: 15368 # GitHub Actions
         - context: "Validate Framework Files"
           integration_id: 15368
 
@@ -95,12 +95,14 @@ After configuring protection:
 The following patterns are blocked by the `Template Protection` check:
 
 ### Individual Files
+
 - `grimoires/loa/prd.md`
 - `grimoires/loa/sdd.md`
 - `grimoires/loa/sprint.md`
 - `grimoires/loa/NOTES.md`
 
 ### Directory Patterns
+
 - `grimoires/loa/a2a/sprint-*/**`
 - `grimoires/loa/a2a/index.md`
 - `grimoires/loa/a2a/deployment-feedback.md`

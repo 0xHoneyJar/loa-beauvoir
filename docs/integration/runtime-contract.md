@@ -11,11 +11,11 @@ The Runtime Contract defines the Integration Layer between Loa (methodology) and
 
 ### Standard Exit Codes
 
-| Code | Name | Meaning | Runtime Action |
-|------|------|---------|----------------|
-| `0` | SUCCESS | Phase completed successfully | Proceed to next phase |
-| `1` | RETRY | Temporary failure, can retry | Retry with backoff (max 3) |
-| `2` | BLOCKED | Permanent failure, needs intervention | Halt, surface escalation report |
+| Code | Name    | Meaning                               | Runtime Action                  |
+| ---- | ------- | ------------------------------------- | ------------------------------- |
+| `0`  | SUCCESS | Phase completed successfully          | Proceed to next phase           |
+| `1`  | RETRY   | Temporary failure, can retry          | Retry with backoff (max 3)      |
+| `2`  | BLOCKED | Permanent failure, needs intervention | Halt, surface escalation report |
 
 ### Exit Code Handling
 
@@ -25,10 +25,10 @@ interface ExitCodeHandler {
 }
 
 enum Action {
-  PROCEED,      // Continue to next phase
-  RETRY,        // Retry current phase
-  ESCALATE,     // Surface escalation report
-  HALT          // Stop execution completely
+  PROCEED, // Continue to next phase
+  RETRY, // Retry current phase
+  ESCALATE, // Surface escalation report
+  HALT, // Stop execution completely
 }
 
 // Example implementation
@@ -62,17 +62,17 @@ async function handleExitCode(code: number, context: PhaseContext): Promise<Acti
 ```typescript
 interface Checkpoint {
   // Required fields
-  execution_id: string;      // Unique execution identifier
-  phase: PhaseIdentifier;    // Current phase (e.g., "discovery", "design")
-  created_at: string;        // ISO 8601 timestamp
-  exit_code: 0 | 1 | 2;      // Phase exit code
-  summary: string;           // Human-readable summary
+  execution_id: string; // Unique execution identifier
+  phase: PhaseIdentifier; // Current phase (e.g., "discovery", "design")
+  created_at: string; // ISO 8601 timestamp
+  exit_code: 0 | 1 | 2; // Phase exit code
+  summary: string; // Human-readable summary
 
   // Optional fields
-  decisions?: Decision[];    // Decisions made during phase
-  artifacts?: Artifact[];    // Files created/modified
-  errors?: Error[];          // Errors encountered
-  metrics?: Metrics;         // Execution metrics
+  decisions?: Decision[]; // Decisions made during phase
+  artifacts?: Artifact[]; // Files created/modified
+  errors?: Error[]; // Errors encountered
+  metrics?: Metrics; // Execution metrics
 }
 
 type PhaseIdentifier =
@@ -86,28 +86,28 @@ type PhaseIdentifier =
   | "learning";
 
 interface Decision {
-  id: string;                // e.g., "D-001"
-  description: string;       // What was decided
-  reasoning: string;         // Why
-  timestamp: string;         // When
+  id: string; // e.g., "D-001"
+  description: string; // What was decided
+  reasoning: string; // Why
+  timestamp: string; // When
 }
 
 interface Artifact {
-  path: string;              // File path
+  path: string; // File path
   action: "created" | "modified" | "deleted";
   size_bytes?: number;
 }
 
 interface Error {
-  code: string;              // Error code
-  message: string;           // Error message
-  recoverable: boolean;      // Can be retried?
+  code: string; // Error code
+  message: string; // Error message
+  recoverable: boolean; // Can be retried?
 }
 
 interface Metrics {
-  duration_ms: number;       // Phase duration
-  tokens_used?: number;      // Approximate token usage
-  api_calls?: number;        // Number of API calls
+  duration_ms: number; // Phase duration
+  tokens_used?: number; // Approximate token usage
+  api_calls?: number; // Number of API calls
 }
 ```
 
@@ -166,20 +166,20 @@ interface ExecutionState {
 
 ### Signal Types
 
-| Signal | Direction | Type | Description |
-|--------|-----------|------|-------------|
-| `CONTEXT_SOFT_LIMIT` | Loa → Runtime | number | Token threshold for standard compaction |
+| Signal               | Direction     | Type   | Description                              |
+| -------------------- | ------------- | ------ | ---------------------------------------- |
+| `CONTEXT_SOFT_LIMIT` | Loa → Runtime | number | Token threshold for standard compaction  |
 | `CONTEXT_HARD_LIMIT` | Loa → Runtime | number | Token threshold for emergency compaction |
-| `CONTEXT_CURRENT` | Runtime → Loa | number | Current token usage |
-| `CONTEXT_WARNING` | Runtime → Loa | enum | Warning level (none, soft, hard) |
+| `CONTEXT_CURRENT`    | Runtime → Loa | number | Current token usage                      |
+| `CONTEXT_WARNING`    | Runtime → Loa | enum   | Warning level (none, soft, hard)         |
 
 ### Interface Definition
 
 ```typescript
 interface ContextSignals {
   // Configuration (from Loa)
-  softLimit: number;       // Default: 80000
-  hardLimit: number;       // Default: 150000
+  softLimit: number; // Default: 80000
+  hardLimit: number; // Default: 150000
 
   // Runtime state
   currentTokens: number;
@@ -206,7 +206,7 @@ function checkLimits(signals: ContextSignals): ContextWarning {
       level: "hard",
       currentTokens,
       percentUsed: (currentTokens / hardLimit) * 100,
-      recommendation: "Emergency compaction required"
+      recommendation: "Emergency compaction required",
     };
   }
 
@@ -215,7 +215,7 @@ function checkLimits(signals: ContextSignals): ContextWarning {
       level: "soft",
       currentTokens,
       percentUsed: (currentTokens / softLimit) * 100,
-      recommendation: "Consider running checkpoint and compaction"
+      recommendation: "Consider running checkpoint and compaction",
     };
   }
 
@@ -223,7 +223,7 @@ function checkLimits(signals: ContextSignals): ContextWarning {
     level: "none",
     currentTokens,
     percentUsed: (currentTokens / softLimit) * 100,
-    recommendation: "Context healthy"
+    recommendation: "Context healthy",
   };
 }
 ```
@@ -232,13 +232,13 @@ function checkLimits(signals: ContextSignals): ContextWarning {
 
 ### Escalation Triggers
 
-| Trigger | Source | Threshold |
-|---------|--------|-----------|
-| Max remediation loops | Loa | 3 loops |
-| Same issue repeated | Loa | 3 occurrences |
-| No progress | Loa | 5 cycles |
-| Timeout | Runtime | 8 hours |
-| Context overflow | Runtime | Hard limit |
+| Trigger               | Source  | Threshold     |
+| --------------------- | ------- | ------------- |
+| Max remediation loops | Loa     | 3 loops       |
+| Same issue repeated   | Loa     | 3 occurrences |
+| No progress           | Loa     | 5 cycles      |
+| Timeout               | Runtime | 8 hours       |
+| Context overflow      | Runtime | Hard limit    |
 
 ### Escalation Report Schema
 
@@ -312,12 +312,14 @@ interface Resolution {
 ### For Runtime Implementers
 
 #### Exit Code Handling
+
 - [ ] Interpret exit code 0 as success
 - [ ] Retry on exit code 1 (max 3 times with backoff)
 - [ ] Escalate on exit code 2
 - [ ] Handle unknown exit codes gracefully
 
 #### Checkpoint Management
+
 - [ ] Create `.loa-checkpoint/` directory on first run
 - [ ] Write checkpoint YAML after each phase
 - [ ] Include all required fields
@@ -325,12 +327,14 @@ interface Resolution {
 - [ ] Enable resume from checkpoint
 
 #### Context Signals
+
 - [ ] Read soft/hard limits from config
 - [ ] Track current token usage
 - [ ] Emit warnings at thresholds
 - [ ] Trigger compaction when needed
 
 #### Escalation Protocol
+
 - [ ] Detect escalation triggers
 - [ ] Generate escalation report
 - [ ] Surface report to user
@@ -353,12 +357,12 @@ cat .loa-checkpoint/context-state.yaml
 
 ## Compatibility Matrix
 
-| Runtime | Exit Codes | Checkpoints | Context Signals | Escalation |
-|---------|------------|-------------|-----------------|------------|
-| Claude Code | Full | Full | Full | Full |
-| Cursor | Full | Partial | Partial | Manual |
-| Aider | Full | Manual | Manual | Manual |
-| Custom | Implement | Implement | Implement | Implement |
+| Runtime     | Exit Codes | Checkpoints | Context Signals | Escalation |
+| ----------- | ---------- | ----------- | --------------- | ---------- |
+| Claude Code | Full       | Full        | Full            | Full       |
+| Cursor      | Full       | Partial     | Partial         | Manual     |
+| Aider       | Full       | Manual      | Manual          | Manual     |
+| Custom      | Implement  | Implement   | Implement       | Implement  |
 
 ## Anthropic Context Features (v1.13.0)
 
@@ -386,9 +390,9 @@ function getEffortBudget(skillName: string, config: EffortConfig): number {
 
 // Pass to API
 const request = {
-  model: "claude-opus-4-5",
+  model: "claude-opus-4-6",
   thinking: {
-    budget_tokens: getEffortBudget("auditing-security", config)
+    budget_tokens: getEffortBudget("auditing-security", config),
   },
   // ... other params
 };

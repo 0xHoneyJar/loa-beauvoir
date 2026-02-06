@@ -1,6 +1,6 @@
 # Flatline Protocol
 
-> Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning document quality assurance.
+> Multi-model adversarial review using Claude Opus 4.6 + GPT-5.2 for planning document quality assurance.
 
 ## Overview
 
@@ -39,10 +39,12 @@ The Flatline Protocol provides adversarial review of planning documents (PRD, SD
 ### 1. Prerequisites
 
 **Required**:
+
 - OpenAI API key (for GPT-5.2)
 - Anthropic API key (for Claude Opus)
 
 **Optional**:
+
 - NotebookLM setup (for Tier 2 knowledge)
 
 ### 2. Configuration
@@ -54,28 +56,28 @@ flatline_protocol:
   enabled: true
 
   models:
-    primary: opus           # Claude Opus 4.5
-    secondary: gpt-5.2      # OpenAI GPT-5.2
+    primary: opus # Claude Opus 4.6
+    secondary: gpt-5.2 # OpenAI GPT-5.2
 
   # Consensus thresholds (0-1000 scale)
   thresholds:
-    high_consensus: 700     # Both >700 = auto-integrate
-    dispute_delta: 300      # Delta >300 = disputed
-    low_value: 400          # Both <400 = discard
-    blocker: 700            # Skeptic concern >700 = blocker
+    high_consensus: 700 # Both >700 = auto-integrate
+    dispute_delta: 300 # Delta >300 = disputed
+    low_value: 400 # Both <400 = discard
+    blocker: 700 # Skeptic concern >700 = blocker
 
   # Knowledge retrieval
   knowledge:
     local:
-      enabled: true         # Tier 1: Local learnings
+      enabled: true # Tier 1: Local learnings
     notebooklm:
-      enabled: false        # Tier 2: NotebookLM (optional)
-      notebook_id: ""       # Your notebook ID
+      enabled: false # Tier 2: NotebookLM (optional)
+      notebook_id: "" # Your notebook ID
       timeout_ms: 30000
 
   # Auto-trigger on planning commands
   auto_trigger:
-    enabled: false          # Set true to auto-run on /plan-and-analyze, /architect, /sprint-plan
+    enabled: false # Set true to auto-run on /plan-and-analyze, /architect, /sprint-plan
     phases: [prd, sdd, sprint]
 ```
 
@@ -113,6 +115,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 **Output**:
+
 - HIGH_CONSENSUS items: Auto-integrated improvements
 - DISPUTED items: Presented for your decision
 - BLOCKERS: Must address before finalizing
@@ -155,6 +158,7 @@ python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py --setup-
 ```
 
 The auth setup:
+
 1. Opens a browser to notebooklm.google.com
 2. Sign in with your Google account
 3. Navigate to any notebook (confirms access)
@@ -180,7 +184,7 @@ flatline_protocol:
   knowledge:
     notebooklm:
       enabled: true
-      notebook_id: "YOUR_NOTEBOOK_ID"  # From URL
+      notebook_id: "YOUR_NOTEBOOK_ID" # From URL
       timeout_ms: 30000
 ```
 
@@ -281,20 +285,20 @@ Options:
 
 ## Scoring Rubric
 
-| Score Range | Classification | Criteria |
-|-------------|----------------|----------|
-| 800-1000 | Critical | Clear gap, low implementation cost, high ROI |
-| 600-799 | Important | Real value, moderate effort, measurable impact |
-| 400-599 | Nice-to-have | Some value, higher effort or unclear benefit |
-| 0-399 | Skip | Speculative, already addressed, or noise |
+| Score Range | Classification | Criteria                                       |
+| ----------- | -------------- | ---------------------------------------------- |
+| 800-1000    | Critical       | Clear gap, low implementation cost, high ROI   |
+| 600-799     | Important      | Real value, moderate effort, measurable impact |
+| 400-599     | Nice-to-have   | Some value, higher effort or unclear benefit   |
+| 0-399       | Skip           | Speculative, already addressed, or noise       |
 
 ## Cost Estimation
 
-| Phase | Calls | Estimated Cost |
-|-------|-------|----------------|
-| Phase 1 | 4 parallel | ~$0.50-0.80 |
-| Phase 2 | 2 parallel | ~$0.10-0.20 |
-| **Total** | 6 calls | ~$0.60-1.00 per document |
+| Phase     | Calls      | Estimated Cost           |
+| --------- | ---------- | ------------------------ |
+| Phase 1   | 4 parallel | ~$0.50-0.80              |
+| Phase 2   | 2 parallel | ~$0.10-0.20              |
+| **Total** | 6 calls    | ~$0.60-1.00 per document |
 
 Costs vary based on document size and model response length.
 
@@ -305,6 +309,7 @@ Costs vary based on document size and model response length.
 **Cause**: Model responses couldn't be parsed (often markdown-wrapped JSON)
 
 **Fix**: The orchestrator now handles markdown-wrapped JSON automatically. If issue persists, check:
+
 ```bash
 # Test model adapter directly
 .claude/scripts/model-adapter.sh --model opus --mode review \
@@ -316,6 +321,7 @@ Costs vary based on document size and model response length.
 **Cause**: Missing environment variables
 
 **Fix**:
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -326,6 +332,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 **Cause**: NotebookLM requires a specific notebook with sources
 
 **Fix**:
+
 1. Create a notebook at notebooklm.google.com
 2. Add sources to the notebook
 3. Configure `notebook_id` in `.loa.config.yaml`
@@ -335,6 +342,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 **Cause**: Google session expired
 
 **Fix**:
+
 ```bash
 python3 .claude/skills/flatline-knowledge/resources/notebooklm-query.py --setup-auth
 ```

@@ -8,12 +8,12 @@ These schemas provide structured output validation for Loa's agent system, ensur
 
 ## Schema Files
 
-| Schema | Purpose | Target Files |
-|--------|---------|--------------|
-| `prd.schema.json` | Product Requirements Document | `grimoires/loa/prd.md` (YAML frontmatter) |
-| `sdd.schema.json` | Software Design Document | `grimoires/loa/sdd.md` (YAML frontmatter) |
-| `sprint.schema.json` | Sprint Plan | `grimoires/loa/sprint.md` (YAML frontmatter) |
-| `trajectory-entry.schema.json` | Agent reasoning trace | `grimoires/loa/a2a/trajectory/*.jsonl` |
+| Schema                         | Purpose                       | Target Files                                 |
+| ------------------------------ | ----------------------------- | -------------------------------------------- |
+| `prd.schema.json`              | Product Requirements Document | `grimoires/loa/prd.md` (YAML frontmatter)    |
+| `sdd.schema.json`              | Software Design Document      | `grimoires/loa/sdd.md` (YAML frontmatter)    |
+| `sprint.schema.json`           | Sprint Plan                   | `grimoires/loa/sprint.md` (YAML frontmatter) |
+| `trajectory-entry.schema.json` | Agent reasoning trace         | `grimoires/loa/a2a/trajectory/*.jsonl`       |
 
 ## Usage
 
@@ -63,7 +63,7 @@ Schema validation can be configured in `.loa.config.yaml`:
 ```yaml
 structured_outputs:
   enabled: true
-  validation_mode: "warn"  # strict | warn | disabled
+  validation_mode: "warn" # strict | warn | disabled
   schemas:
     prd: ".claude/schemas/prd.schema.json"
     sdd: ".claude/schemas/sdd.schema.json"
@@ -78,7 +78,7 @@ For API integration, schemas can be passed directly to the Claude API:
 
 ```python
 response = client.messages.create(
-    model="claude-opus-4-5-20251101",
+    model="claude-opus-4-6",
     messages=[...],
     response_format={
         "type": "json_schema",

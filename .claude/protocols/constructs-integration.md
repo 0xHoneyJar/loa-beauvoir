@@ -8,13 +8,13 @@ The Registry Integration enables commercial skill distribution through the Loa C
 
 **Production Services:**
 
-| Service | URL | Status |
-|---------|-----|--------|
-| API | `https://loa-constructs-api.fly.dev/v1` | Live |
-| Health | `https://loa-constructs-api.fly.dev/v1/health` | Live |
-| Legacy | `https://api.loaskills.dev/v1` | Deprecated |
+| Service | URL                                        | Status |
+| ------- | ------------------------------------------ | ------ |
+| API     | `https://api.constructs.network/v1`        | Live   |
+| Health  | `https://api.constructs.network/v1/health` | Live   |
 
 **Key Principles:**
+
 - Local skills always take precedence over registry skills
 - License validation uses RS256 JWT signatures
 - Offline operation supported with grace periods
@@ -43,14 +43,15 @@ The Registry Integration enables commercial skill distribution through the Loa C
 
 Skills are discovered and loaded in priority order:
 
-| Priority | Source | Path | License Required |
-|----------|--------|------|------------------|
-| 1 (highest) | Local | `.claude/skills/{name}/` | No |
-| 2 | Override | `.claude/overrides/skills/{name}/` | No |
-| 3 | Registry | `.claude/constructs/skills/{vendor}/{name}/` | Yes |
-| 4 (lowest) | Pack | `.claude/constructs/packs/{pack}/skills/{name}/` | Yes (pack license) |
+| Priority    | Source   | Path                                             | License Required   |
+| ----------- | -------- | ------------------------------------------------ | ------------------ |
+| 1 (highest) | Local    | `.claude/skills/{name}/`                         | No                 |
+| 2           | Override | `.claude/overrides/skills/{name}/`               | No                 |
+| 3           | Registry | `.claude/constructs/skills/{vendor}/{name}/`     | Yes                |
+| 4 (lowest)  | Pack     | `.claude/constructs/packs/{pack}/skills/{name}/` | Yes (pack license) |
 
 **Conflict Resolution:**
+
 - Same-named skill: Higher priority wins, lower is ignored
 - Local skill + Registry skill: Local skill loads, registry skill skipped
 - No warning for conflicts (silent priority resolution)
@@ -100,11 +101,11 @@ Skills are discovered and loaded in priority order:
 
 ### Grace Periods by Tier
 
-| License Tier | Grace Period | Use Case |
-|--------------|--------------|----------|
-| `individual` | 24 hours | Personal use |
-| `pro` | 24 hours | Professional use |
-| `team` | 72 hours | Small teams |
+| License Tier | Grace Period       | Use Case            |
+| ------------ | ------------------ | ------------------- |
+| `individual` | 24 hours           | Personal use        |
+| `pro`        | 24 hours           | Professional use    |
+| `team`       | 72 hours           | Small teams         |
 | `enterprise` | 168 hours (7 days) | Large organizations |
 
 ### JWT Token Structure
@@ -117,7 +118,7 @@ Skills are discovered and loaded in priority order:
     "kid": "key-id-from-registry"
   },
   "payload": {
-    "iss": "loaskills.dev",
+    "iss": "constructs.network",
     "sub": "vendor/skill-slug",
     "aud": "loa-framework",
     "iat": 1704067200,
@@ -133,15 +134,16 @@ Skills are discovered and loaded in priority order:
 
 The registry supports offline operation with these behaviors:
 
-| Scenario | Behavior |
-|----------|----------|
-| Offline + Valid cached license | Skill loads normally |
-| Offline + Expired (in grace) | Skill loads with warning |
-| Offline + Expired (beyond grace) | Skill blocked |
-| Offline + No cached key | Skill blocked (can't validate) |
-| `LOA_OFFLINE=1` | Skip all network calls, use cache only |
+| Scenario                         | Behavior                               |
+| -------------------------------- | -------------------------------------- |
+| Offline + Valid cached license   | Skill loads normally                   |
+| Offline + Expired (in grace)     | Skill loads with warning               |
+| Offline + Expired (beyond grace) | Skill blocked                          |
+| Offline + No cached key          | Skill blocked (can't validate)         |
+| `LOA_OFFLINE=1`                  | Skip all network calls, use cache only |
 
 **Key Caching:**
+
 - Public keys cached in `~/.loa/cache/public-keys/`
 - Default cache duration: 24 hours (configurable)
 - Metadata stored in `{key_id}.meta.json`
@@ -194,41 +196,41 @@ license-validator.sh refresh-key <key-id>
 
 ## Exit Codes
 
-| Code | Constant | Meaning |
-|------|----------|---------|
-| 0 | `EXIT_VALID` | License valid, skill can load |
-| 1 | `EXIT_GRACE` | License expired but in grace period |
-| 2 | `EXIT_EXPIRED` | License expired beyond grace period |
-| 3 | `EXIT_MISSING` | License file not found |
-| 4 | `EXIT_INVALID` | Invalid signature or malformed JWT |
-| 5 | `EXIT_ERROR` | Other error (network, parsing, etc.) |
+| Code | Constant       | Meaning                              |
+| ---- | -------------- | ------------------------------------ |
+| 0    | `EXIT_VALID`   | License valid, skill can load        |
+| 1    | `EXIT_GRACE`   | License expired but in grace period  |
+| 2    | `EXIT_EXPIRED` | License expired beyond grace period  |
+| 3    | `EXIT_MISSING` | License file not found               |
+| 4    | `EXIT_INVALID` | Invalid signature or malformed JWT   |
+| 5    | `EXIT_ERROR`   | Other error (network, parsing, etc.) |
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOA_CONSTRUCTS_DIR` | `.claude/constructs` | Registry content directory |
-| `LOA_CACHE_DIR` | `~/.loa/cache` | Cache directory for keys |
-| `LOA_REGISTRY_URL` | `https://loa-constructs-api.fly.dev/v1` | Registry API endpoint |
-| `LOA_OFFLINE` | `0` | Set to `1` for offline-only mode |
-| `LOA_OFFLINE_GRACE_HOURS` | `24` | Override default grace period |
-| `LOA_REGISTRY_ENABLED` | `true` | Master toggle for registry |
-| `LOA_AUTO_REFRESH_THRESHOLD_HOURS` | `24` | Refresh warning threshold |
-| `NO_COLOR` | unset | Disable colored output |
+| Variable                           | Default                             | Description                      |
+| ---------------------------------- | ----------------------------------- | -------------------------------- |
+| `LOA_CONSTRUCTS_DIR`               | `.claude/constructs`                | Registry content directory       |
+| `LOA_CACHE_DIR`                    | `~/.loa/cache`                      | Cache directory for keys         |
+| `LOA_REGISTRY_URL`                 | `https://api.constructs.network/v1` | Registry API endpoint            |
+| `LOA_OFFLINE`                      | `0`                                 | Set to `1` for offline-only mode |
+| `LOA_OFFLINE_GRACE_HOURS`          | `24`                                | Override default grace period    |
+| `LOA_REGISTRY_ENABLED`             | `true`                              | Master toggle for registry       |
+| `LOA_AUTO_REFRESH_THRESHOLD_HOURS` | `24`                                | Refresh warning threshold        |
+| `NO_COLOR`                         | unset                               | Disable colored output           |
 
 ## Configuration (.loa.config.yaml)
 
 ```yaml
 registry:
-  enabled: true                        # Master toggle
-  default_url: "https://loa-constructs-api.fly.dev/v1"
-  public_key_cache_hours: 24           # Key cache duration
-  load_on_startup: true                # Load skills during /setup
-  validate_licenses: true              # Enable signature validation
-  offline_grace_hours: 24              # Default grace period
-  auto_refresh_threshold_hours: 24     # Refresh warning threshold
-  check_updates_on_setup: true         # Auto-check updates
-  reserved_skill_names:                # Protected names
+  enabled: true # Master toggle
+  default_url: "https://api.constructs.network/v1"
+  public_key_cache_hours: 24 # Key cache duration
+  load_on_startup: true # Load skills during /setup
+  validate_licenses: true # Enable signature validation
+  offline_grace_hours: 24 # Default grace period
+  auto_refresh_threshold_hours: 24 # Refresh warning threshold
+  check_updates_on_setup: true # Auto-check updates
+  reserved_skill_names: # Protected names
     - "discovering-requirements"
     - "designing-architecture"
     - "planning-sprints"
@@ -240,6 +242,7 @@ registry:
 ```
 
 **Precedence Order:**
+
 1. Environment variable (highest priority)
 2. `.loa.config.yaml` configuration
 3. Default value (lowest priority)
@@ -253,7 +256,7 @@ registry:
    Expired: 3 days ago
    Grace period: 24 hours (exceeded)
 
-   To renew: Visit https://loaskills.dev/renew/vendor/skill-name
+   To renew: Visit https://www.constructs.network/
 ```
 
 ### Invalid Signature
@@ -262,7 +265,7 @@ registry:
 ✗ Invalid license signature for 'vendor/skill-name'
    The license file may be corrupted or tampered with.
 
-   To fix: Re-download from https://loaskills.dev/skills/vendor/skill-name
+   To fix: Re-download from https://www.constructs.network/
 ```
 
 ### Missing License
@@ -290,7 +293,7 @@ registry:
    Expires: in 12 hours
 
    Skill will continue to work for 24 more hours after expiry.
-   To renew: Visit https://loaskills.dev/renew/vendor/skill-name
+   To renew: Visit https://www.constructs.network/
 ```
 
 ## Integration with /setup
@@ -341,16 +344,19 @@ The `.constructs-meta.json` file tracks installation state:
 **Important**: Installed constructs contain user-specific licenses and copyrighted content that should NOT be committed to version control.
 
 The loader automatically adds `.claude/constructs/` to `.gitignore` when:
+
 - Installing skills (`validate`)
 - Installing packs (`validate-pack`)
 - Running `ensure-gitignore` command explicitly
 
 **Why constructs are gitignored:**
+
 1. **License watermarks**: Each license contains user-specific identifiers
 2. **Copyrighted content**: Skills are licensed per-user, not per-repo
 3. **Team workflows**: Each developer should install with their own credentials
 
 **Manual check:**
+
 ```bash
 # Verify gitignore is configured
 constructs-loader.sh ensure-gitignore
@@ -360,6 +366,7 @@ git check-ignore -v .claude/constructs/
 ```
 
 **If accidentally committed:**
+
 ```bash
 # Remove from tracking but keep local files
 git rm -r --cached .claude/constructs/
@@ -389,7 +396,7 @@ git commit -m "fix: remove licensed constructs from tracking"
 1. Re-download license from registry portal
 2. Check system time is accurate (JWT uses timestamps)
 3. Clear key cache: `rm -rf ~/.loa/cache/public-keys/*`
-4. Verify network connectivity to `loa-constructs-api.fly.dev`
+4. Verify network connectivity to `api.constructs.network`
 
 ### Pack Skills Not Found
 
