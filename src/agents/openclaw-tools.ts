@@ -3,6 +3,7 @@ import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
+import { createBeadsDispatchTool } from "./beads-bridge/index.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
@@ -139,6 +140,14 @@ export function createOpenClawTools(options?: {
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
   ];
+
+  // Beads bridge tool (feature-gated: only present if br CLI is in PATH)
+  const beadsDispatchTool = createBeadsDispatchTool({
+    agentSessionKey: options?.agentSessionKey,
+  });
+  if (beadsDispatchTool) {
+    tools.push(beadsDispatchTool);
+  }
 
   const pluginTools = resolvePluginTools({
     context: {
