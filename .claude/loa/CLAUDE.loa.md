@@ -89,6 +89,20 @@ beads:
 
 **Critical**: Never edit `.claude/` - use `.claude/overrides/` or `.loa.config.yaml`.
 
+## File Creation Safety
+
+**CRITICAL**: Bash heredocs silently corrupt source files containing `${...}` template literals.
+
+| Method              | Shell Expansion | When to Use                                           |
+| ------------------- | --------------- | ----------------------------------------------------- |
+| **Write tool**      | None            | Source files (.tsx, .jsx, .ts, .js, etc.) - PREFERRED |
+| `<<'EOF'` (quoted)  | None            | Shell content with literal `${...}`                   |
+| `<< EOF` (unquoted) | Yes             | Shell scripts needing variable expansion only         |
+
+**Rule**: For source files, ALWAYS use Write tool. If heredoc required, ALWAYS quote the delimiter.
+
+**Protocol**: `.claude/protocols/safe-file-creation.md`
+
 ## Configurable Paths (v1.27.0)
 
 Grimoire and state file locations are configurable via `.loa.config.yaml`:
@@ -374,11 +388,12 @@ Pre-execution validation for skill invocations based on OpenAI's "A Practical Gu
 | `high`     | Confirm        | BLOCK (use `--allow-high`) |
 | `critical` | Confirm+Reason | ALWAYS BLOCK               |
 
-**Skills by danger level**:
+**Skills by danger level** (synced with index.yaml 2026-02-06):
 
-- `safe`: discovering-requirements, designing-architecture, reviewing-code, auditing-security
-- `moderate`: implementing-tasks, planning-sprints, mounting-framework
-- `high`: deploying-infrastructure, run-mode, autonomous-agent
+- `safe`: continuous-learning, enhancing-prompts, flatline-knowledge, mounting-framework, translating-for-executives, browsing-constructs
+- `moderate`: discovering-requirements, designing-architecture, planning-sprints, implementing-tasks, reviewing-code, riding-codebase, simstim-workflow
+- `high`: auditing-security, deploying-infrastructure, run-mode
+- `critical`: autonomous-agent
 
 ### Run Mode Integration
 
@@ -410,7 +425,7 @@ guardrails:
 
 ## Flatline Protocol (v1.22.0)
 
-Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning document quality assurance.
+Multi-model adversarial review using Claude Opus 4.6 + GPT-5.2 for planning document quality assurance.
 
 ### How It Works
 

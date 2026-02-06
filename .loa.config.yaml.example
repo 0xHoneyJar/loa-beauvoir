@@ -388,6 +388,17 @@ run_mode:
     consolidate_pr: true
     commit_prefix: "feat"
     include_commits_by_sprint: true
+  # Git operations control (v1.30.0)
+  # Controls automatic push and PR creation at end of /run execution
+  git:
+    # auto_push: Controls whether to push commits to remote
+    #   - true: Push and create PR automatically (default, current behavior)
+    #   - false: Never auto-push, keep all changes local
+    #   - prompt: Ask before pushing (HITL confirmation)
+    # Can be overridden with --local (forces false) or --confirm-push (forces prompt)
+    auto_push: true
+    # Always create PRs as drafts - this is hardcoded and cannot be changed
+    create_draft_pr: true
 
 # -----------------------------------------------------------------------------
 # Beads-First Infrastructure (v1.29.0)
@@ -713,7 +724,7 @@ invisible_retrospective:
 # -----------------------------------------------------------------------------
 # Flatline Protocol (v1.17.0)
 # -----------------------------------------------------------------------------
-# Multi-model adversarial review using Claude Opus 4.5 + GPT-5.2 for planning
+# Multi-model adversarial review using Claude Opus 4.6 + GPT-5.2 for planning
 # document quality assurance. Phase 1: parallel reviews, Phase 2: cross-scoring,
 # Phase 3: consensus extraction with HIGH/DISPUTED/LOW/BLOCKER classification.
 flatline_protocol:
@@ -731,7 +742,7 @@ flatline_protocol:
 
   # Model configuration
   models:
-    primary: opus        # Claude Opus 4.5 (via claude.ai or API)
+    primary: opus        # Claude Opus 4.6 (via claude.ai or API)
     secondary: gpt-5.2   # OpenAI GPT-5.2 (via API)
 
   # Consensus thresholds (0-1000 scale)

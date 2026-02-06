@@ -1,4 +1,4 @@
-# GPT 5.2 Cross-Model Review Integration Protocol
+# GPT Cross-Model Review Integration Protocol
 
 ## Overview
 
@@ -63,12 +63,12 @@ In `.loa.config.yaml`:
 
 ```yaml
 gpt_review:
-  enabled: true              # Master toggle
-  timeout_seconds: 300       # API timeout
-  max_iterations: 3          # Auto-approve after this
+  enabled: true # Master toggle
+  timeout_seconds: 300 # API timeout
+  max_iterations: 3 # Auto-approve after this
   models:
-    documents: "gpt-5.2"     # PRD, SDD, Sprint reviews
-    code: "gpt-5.2-codex"    # Code reviews
+    documents: "gpt-5.2" # PRD, SDD, Sprint reviews
+    code: "gpt-5.2-codex" # Code reviews (gpt-5.3-codex when API available)
   phases:
     prd: true
     sdd: true
@@ -82,22 +82,24 @@ gpt_review:
 
 ## Verdicts
 
-| Verdict | Code Review | Document Review | Script Behavior |
-|---------|-------------|-----------------|-----------------|
-| `SKIPPED` | Review disabled | Review disabled | Returns immediately, exit 0 |
-| `APPROVED` | No issues | No blocking issues | Returns result, exit 0 |
-| `CHANGES_REQUIRED` | Has bugs to fix | Has failure risks | Returns result, exit 0 |
-| `DECISION_NEEDED` | N/A | Design choice for user | Returns result, exit 0 |
+| Verdict            | Code Review     | Document Review        | Script Behavior             |
+| ------------------ | --------------- | ---------------------- | --------------------------- |
+| `SKIPPED`          | Review disabled | Review disabled        | Returns immediately, exit 0 |
+| `APPROVED`         | No issues       | No blocking issues     | Returns result, exit 0      |
+| `CHANGES_REQUIRED` | Has bugs to fix | Has failure risks      | Returns result, exit 0      |
+| `DECISION_NEEDED`  | N/A             | Design choice for user | Returns result, exit 0      |
 
 ### Verdict Handling by Type
 
 **Code Reviews:**
+
 - `SKIPPED` → Continue normally
 - `APPROVED` → Continue normally
 - `CHANGES_REQUIRED` → Claude fixes automatically, re-runs review
 - No `DECISION_NEEDED` - bugs are fixed, not discussed
 
 **Document Reviews (PRD, SDD, Sprint):**
+
 - `SKIPPED` → Continue normally
 - `APPROVED` → Write final document
 - `CHANGES_REQUIRED` → Claude fixes, re-runs review
@@ -125,12 +127,13 @@ APPROVED (or auto-approve at max_iterations)
 
 **For re-reviews (iteration 2+), ALWAYS pass these parameters:**
 
-| Parameter | Purpose | Example |
-|-----------|---------|---------|
-| `--iteration N` | Tells GPT which iteration this is | `--iteration 2` |
-| `--previous <file>` | Previous findings for context | `--previous /tmp/gpt-review-findings-1.json` |
+| Parameter           | Purpose                           | Example                                      |
+| ------------------- | --------------------------------- | -------------------------------------------- |
+| `--iteration N`     | Tells GPT which iteration this is | `--iteration 2`                              |
+| `--previous <file>` | Previous findings for context     | `--previous /tmp/gpt-review-findings-1.json` |
 
 **Why this matters:**
+
 - `{{ITERATION}}` is substituted into the re-review prompt
 - `{{PREVIOUS_FINDINGS}}` gives GPT the full context of what it found before
 - Without these, GPT re-reviews from scratch and may find the same issues again
@@ -154,27 +157,28 @@ echo "$response" > "/tmp/gpt-review-findings-${iteration}.json"
 ```
 
 The re-review prompt focuses on:
+
 1. Were previous issues fixed?
 2. Did fixes introduce new problems?
 3. Converge toward approval
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `.claude/scripts/gpt-review-hook.sh` | PostToolUse hook - phase-aware checkpoint |
-| `.claude/scripts/gpt-review-api.sh` | API interaction, config check |
-| `.claude/scripts/gpt-review-toggle.sh` | Toggle enabled/disabled |
-| `.claude/scripts/inject-gpt-review-gates.sh` | Manage context file based on config |
-| `.claude/commands/gpt-review.md` | Command definition |
-| `.claude/commands/toggle-gpt-review.md` | Toggle command |
-| `.claude/prompts/gpt-review/base/code-review.md` | Code review prompt |
-| `.claude/prompts/gpt-review/base/prd-review.md` | PRD review prompt |
-| `.claude/prompts/gpt-review/base/sdd-review.md` | SDD review prompt |
-| `.claude/prompts/gpt-review/base/sprint-review.md` | Sprint review prompt |
-| `.claude/prompts/gpt-review/base/re-review.md` | Re-review prompt |
-| `.claude/schemas/gpt-review-response.schema.json` | Response validation |
-| `.claude/templates/gpt-review-instructions.md.template` | Context file template |
+| File                                                    | Purpose                                   |
+| ------------------------------------------------------- | ----------------------------------------- |
+| `.claude/scripts/gpt-review-hook.sh`                    | PostToolUse hook - phase-aware checkpoint |
+| `.claude/scripts/gpt-review-api.sh`                     | API interaction, config check             |
+| `.claude/scripts/gpt-review-toggle.sh`                  | Toggle enabled/disabled                   |
+| `.claude/scripts/inject-gpt-review-gates.sh`            | Manage context file based on config       |
+| `.claude/commands/gpt-review.md`                        | Command definition                        |
+| `.claude/commands/toggle-gpt-review.md`                 | Toggle command                            |
+| `.claude/prompts/gpt-review/base/code-review.md`        | Code review prompt                        |
+| `.claude/prompts/gpt-review/base/prd-review.md`         | PRD review prompt                         |
+| `.claude/prompts/gpt-review/base/sdd-review.md`         | SDD review prompt                         |
+| `.claude/prompts/gpt-review/base/sprint-review.md`      | Sprint review prompt                      |
+| `.claude/prompts/gpt-review/base/re-review.md`          | Re-review prompt                          |
+| `.claude/schemas/gpt-review-response.schema.json`       | Response validation                       |
+| `.claude/templates/gpt-review-instructions.md.template` | Context file template                     |
 
 ## Skill Integration
 
@@ -188,6 +192,7 @@ Skills don't need embedded GPT review logic. The PostToolUse hook provides autom
    - Change significance (trivial vs substantial)
 
 **Commands load context file** via `context_files`:
+
 ```yaml
 context_files:
   - path: ".claude/context/gpt-review-active.md"
@@ -198,6 +203,7 @@ context_files:
 The context file (created by toggle script when enabled) provides detailed instructions for preparing expertise/context files.
 
 **Skills don't need to know about:**
+
 - Config checking (hook + script handle it)
 - API calls (script handles it)
 - Retry logic (script handles it)
@@ -207,47 +213,54 @@ The context file (created by toggle script when enabled) provides detailed instr
 ## API Details
 
 ### GPT 5.2 (Documents)
+
 - Endpoint: `https://api.openai.com/v1/chat/completions`
 - Model: `gpt-5.2`
 - Format: `messages` array with system + user roles
 
-### GPT 5.2 Codex (Code)
+### GPT Codex (Code)
+
 - Endpoint: `https://api.openai.com/v1/responses`
-- Model: `gpt-5.2-codex`
+- Model: `gpt-5.2-codex` (default; `gpt-5.3-codex` registered, awaiting API availability)
 - Format: `input` field (not messages)
 - Supports: `reasoning: {effort: "medium"}`
 
 ## Error Handling
 
-| Exit Code | Meaning | Action |
-|-----------|---------|--------|
-| 0 | Success (includes SKIPPED) | Continue |
-| 1 | API error | Retry or skip |
-| 2 | Invalid input | Check arguments |
-| 3 | Timeout | Retry with longer timeout |
-| 4 | Missing API key | Set OPENAI_API_KEY |
-| 5 | Invalid response | Retry |
+| Exit Code | Meaning                    | Action                    |
+| --------- | -------------------------- | ------------------------- |
+| 0         | Success (includes SKIPPED) | Continue                  |
+| 1         | API error                  | Retry or skip             |
+| 2         | Invalid input              | Check arguments           |
+| 3         | Timeout                    | Retry with longer timeout |
+| 4         | Missing API key            | Set OPENAI_API_KEY        |
+| 5         | Invalid response           | Retry                     |
 
 ## Troubleshooting
 
 ### "GPT review disabled"
+
 - Check `gpt_review.enabled` in `.loa.config.yaml`
 - Check phase-specific toggle (e.g., `gpt_review.phases.prd`)
 
 ### "Missing API key"
+
 - Set `OPENAI_API_KEY` environment variable
 - Or add to `.env` file in project root
 
 ### "API timeout"
+
 - Increase `gpt_review.timeout_seconds` in config
 - Or set `GPT_REVIEW_TIMEOUT` environment variable
 
 ### "Invalid response"
+
 - GPT returned non-JSON or missing verdict
 - Check API response in logs
 - May need to retry
 
 ### "Rate limited"
+
 - Script retries with exponential backoff
 - If persistent, reduce review frequency
 

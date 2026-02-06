@@ -9,12 +9,14 @@ Cross-model review using GPT 5.2 to catch issues Claude might miss.
 ```
 
 **Types:**
+
 - `code` - Review code changes (git diff or specified files)
 - `prd` - Review Product Requirements Document
 - `sdd` - Review Software Design Document
 - `sprint` - Review Sprint Plan
 
 **Examples:**
+
 ```bash
 /gpt-review code                    # Review git diff
 /gpt-review code src/auth.ts        # Review specific file
@@ -43,6 +45,7 @@ Write expertise to `/tmp/gpt-review-expertise.md`:
 
 ```markdown
 You are an expert in [ACTUAL DOMAIN FROM PRD]. You have deep knowledge of:
+
 - [ACTUAL KEY CONCEPT 1 from PRD]
 - [ACTUAL KEY CONCEPT 2 from PRD]
 - [ACTUAL STANDARDS/PROTOCOLS for this domain]
@@ -51,13 +54,13 @@ You are an expert in [ACTUAL DOMAIN FROM PRD]. You have deep knowledge of:
 
 **CRITICAL**: Replace ALL bracketed placeholders with REAL values from the PRD. Examples:
 
-| If PRD is about... | Domain Expertise should say... |
-|-------------------|-------------------------------|
-| Crypto wallet | "You are an expert in cryptocurrency wallets. You have deep knowledge of: HD key derivation (BIP-32/39/44), secure key storage, transaction signing, common wallet vulnerabilities (key leakage, weak entropy)" |
-| ML pipeline | "You are an expert in machine learning infrastructure. You have deep knowledge of: model training pipelines, data preprocessing, GPU optimization, MLOps practices, common ML bugs (data leakage, distribution shift)" |
-| Healthcare app | "You are an expert in healthcare software. You have deep knowledge of: HIPAA compliance, HL7/FHIR standards, PHI protection, audit logging requirements, healthcare-specific security concerns" |
-| E-commerce | "You are an expert in e-commerce platforms. You have deep knowledge of: payment processing (PCI-DSS), inventory management, order fulfillment, cart abandonment patterns, checkout optimization" |
-| CLI tool | "You are an expert in command-line tool development. You have deep knowledge of: argument parsing, UNIX conventions, shell scripting integration, error handling patterns, cross-platform compatibility" |
+| If PRD is about... | Domain Expertise should say...                                                                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Crypto wallet      | "You are an expert in cryptocurrency wallets. You have deep knowledge of: HD key derivation (BIP-32/39/44), secure key storage, transaction signing, common wallet vulnerabilities (key leakage, weak entropy)"        |
+| ML pipeline        | "You are an expert in machine learning infrastructure. You have deep knowledge of: model training pipelines, data preprocessing, GPU optimization, MLOps practices, common ML bugs (data leakage, distribution shift)" |
+| Healthcare app     | "You are an expert in healthcare software. You have deep knowledge of: HIPAA compliance, HL7/FHIR standards, PHI protection, audit logging requirements, healthcare-specific security concerns"                        |
+| E-commerce         | "You are an expert in e-commerce platforms. You have deep knowledge of: payment processing (PCI-DSS), inventory management, order fulfillment, cart abandonment patterns, checkout optimization"                       |
+| CLI tool           | "You are an expert in command-line tool development. You have deep knowledge of: argument parsing, UNIX conventions, shell scripting integration, error handling patterns, cross-platform compatibility"               |
 
 ### Step 1: Build Product & Feature Context (MANDATORY - USER PROMPT)
 
@@ -68,6 +71,7 @@ Write context to `/tmp/gpt-review-context.md`:
 #### For Code Reviews
 
 Read these files and extract ACTUAL content:
+
 - `grimoires/loa/prd.md` - Product summary
 - `grimoires/loa/NOTES.md` - Current task (if sprint work)
 - `grimoires/loa/sprint.md` - Acceptance criteria (if sprint work)
@@ -85,6 +89,7 @@ Security/compliance: [ACTUAL SECURITY REQUIREMENTS, or "None specified"].
 **Task**: [ACTUAL TASK ID AND TITLE, or describe what you're doing for ad-hoc work]
 **Purpose**: [ACTUAL PURPOSE - what this code is supposed to do]
 **Acceptance Criteria**:
+
 - [ACTUAL CRITERION 1 from sprint.md or your goal]
 - [ACTUAL CRITERION 2]
 - [ACTUAL CRITERION 3]
@@ -92,6 +97,7 @@ Security/compliance: [ACTUAL SECURITY REQUIREMENTS, or "None specified"].
 ## Relevant Architecture
 
 From SDD [ACTUAL COMPONENT NAME]:
+
 - Design: [ACTUAL DESIGN DECISIONS from SDD]
 - Data flow: [ACTUAL DATA FLOW from SDD]
 - Security: [ACTUAL SECURITY REQUIREMENTS for this component]
@@ -99,6 +105,7 @@ From SDD [ACTUAL COMPONENT NAME]:
 ## What to Verify
 
 Given the above context, verify:
+
 1. Code correctly implements the task
 2. Acceptance criteria can be met
 3. Follows the SDD architecture
@@ -118,6 +125,7 @@ Target users: [ACTUAL TARGET USERS from PRD].
 ## Review Focus
 
 Pay special attention to:
+
 - [ACTUAL DOMAIN-SPECIFIC CONCERNS]
 - [ACTUAL COMPLIANCE/SECURITY REQUIREMENTS]
 - [ACTUAL PITFALLS common in this domain]
@@ -126,6 +134,7 @@ Pay special attention to:
 ### Step 2: Prepare Content File
 
 **For code reviews:**
+
 ```bash
 # Specific file
 content_file="src/auth.ts"
@@ -136,6 +145,7 @@ content_file="/tmp/gpt-review-content.txt"
 ```
 
 **For document reviews:**
+
 ```bash
 case "$type" in
   prd) content_file="${file:-grimoires/loa/prd.md}" ;;
@@ -319,14 +329,14 @@ EOF
 ```yaml
 # .loa.config.yaml
 gpt_review:
-  enabled: true              # Master toggle
-  timeout_seconds: 300       # API timeout
-  max_iterations: 3          # Auto-approve after this many
+  enabled: true # Master toggle
+  timeout_seconds: 300 # API timeout
+  max_iterations: 3 # Auto-approve after this many
   models:
-    documents: "gpt-5.2"     # For PRD, SDD, Sprint
-    code: "gpt-5.2-codex"    # For code reviews
+    documents: "gpt-5.2" # For PRD, SDD, Sprint
+    code: "gpt-5.2-codex" # For code reviews (gpt-5.3-codex when API available)
   phases:
-    prd: true                # Enable/disable per type
+    prd: true # Enable/disable per type
     sdd: true
     sprint: true
     implementation: true
@@ -338,20 +348,20 @@ gpt_review:
 
 ## Verdicts
 
-| Verdict | Code Review | Document Review |
-|---------|-------------|-----------------|
-| SKIPPED | Review disabled | Review disabled |
-| APPROVED | No bugs found | No blocking issues |
+| Verdict          | Code Review     | Document Review                     |
+| ---------------- | --------------- | ----------------------------------- |
+| SKIPPED          | Review disabled | Review disabled                     |
+| APPROVED         | No bugs found   | No blocking issues                  |
 | CHANGES_REQUIRED | Has bugs to fix | Has issues that would cause failure |
-| DECISION_NEEDED | N/A (not used) | Design choice for user to decide |
+| DECISION_NEEDED  | N/A (not used)  | Design choice for user to decide    |
 
 ## Error Handling
 
-| Exit Code | Meaning | Action |
-|-----------|---------|--------|
-| 0 | Success (includes SKIPPED) | Continue |
-| 1 | API error | Retry or skip |
-| 2 | Invalid input | Check arguments |
-| 3 | Timeout | Retry with longer timeout |
-| 4 | Missing API key | Set OPENAI_API_KEY |
-| 5 | Invalid response | Retry |
+| Exit Code | Meaning                    | Action                    |
+| --------- | -------------------------- | ------------------------- |
+| 0         | Success (includes SKIPPED) | Continue                  |
+| 1         | API error                  | Retry or skip             |
+| 2         | Invalid input              | Check arguments           |
+| 3         | Timeout                    | Retry with longer timeout |
+| 4         | Missing API key            | Set OPENAI_API_KEY        |
+| 5         | Invalid response           | Retry                     |
