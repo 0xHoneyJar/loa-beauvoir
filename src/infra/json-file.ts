@@ -18,6 +18,8 @@ export function saveJsonFile(pathname: string, data: unknown) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
-  fs.writeFileSync(pathname, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-  fs.chmodSync(pathname, 0o600);
+  // Atomic write: write to temp file then rename (rename is atomic on POSIX)
+  const tmp = `${pathname}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(tmp, pathname);
 }
