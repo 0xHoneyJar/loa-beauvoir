@@ -14,18 +14,17 @@
  * @version 1.0.0
  */
 
+import type {
+  IContextCompiler,
+  ContextCompilationResult,
+  CompiledBead,
+} from "./beads-work-queue.js";
 import {
   ContextCompiler,
   type ContextCompilerConfig,
   type ContextCompilationResult as UpstreamResult,
   type IBrExecutor,
 } from "../../../.claude/lib/beads";
-
-import type {
-  IContextCompiler,
-  ContextCompilationResult,
-  CompiledBead,
-} from "./beads-work-queue.js";
 
 // =============================================================================
 // Adapter
@@ -53,6 +52,14 @@ export class BeadsContextCompilerAdapter implements IContextCompiler {
     this.upstream = upstream;
   }
 
+  /**
+   * Compile context for a task.
+   *
+   * Note: `options.tokenBudget` is advisory/display-only. The actual compilation
+   * uses the upstream ContextCompiler's configured budget. The returned
+   * `tokenBudget` reflects the caller's requested budget (if provided) or
+   * the upstream's actual budget, for informational purposes.
+   */
   async compile(
     taskId: string,
     options?: { tokenBudget?: number },
@@ -72,18 +79,17 @@ export class BeadsContextCompilerAdapter implements IContextCompiler {
     }));
 
     // Compute total excluded count
-    const totalExcluded = Object.values(
-      upstreamResult.stats.excludedByReason,
-    ).reduce((a, b) => a + b, 0);
+    const totalExcluded = Object.values(upstreamResult.stats.excludedByReason).reduce(
+      (a, b) => a + b,
+      0,
+    );
 
     // Build trace from stats
     const trace: string[] = [
       `compiled: ${upstreamResult.stats.included} included, ${totalExcluded} excluded`,
       `tokens: ${upstreamResult.stats.estimatedTokens}/${upstreamResult.stats.tokenBudget} (${Math.round(upstreamResult.stats.utilization * 100)}% utilization)`,
     ];
-    for (const [reason, count] of Object.entries(
-      upstreamResult.stats.excludedByReason,
-    )) {
+    for (const [reason, count] of Object.entries(upstreamResult.stats.excludedByReason)) {
       trace.push(`excluded: ${count} beads (${reason})`);
     }
 
@@ -91,8 +97,7 @@ export class BeadsContextCompilerAdapter implements IContextCompiler {
       taskId,
       beads,
       tokenEstimate: upstreamResult.stats.estimatedTokens,
-      tokenBudget:
-        options?.tokenBudget ?? upstreamResult.stats.tokenBudget,
+      tokenBudget: options?.tokenBudget ?? upstreamResult.stats.tokenBudget,
       trace,
     };
   }

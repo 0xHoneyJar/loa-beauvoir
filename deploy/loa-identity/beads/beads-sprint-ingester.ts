@@ -12,6 +12,7 @@
  */
 
 import {
+  validateBeadId,
   validateLabel,
   shellEscape,
   filterValidLabels,
@@ -19,7 +20,6 @@ import {
   type IBrExecutor,
   type Bead,
 } from "../../../.claude/lib/beads";
-
 import { WORK_QUEUE_LABELS } from "./beads-work-queue.js";
 
 // =============================================================================
@@ -432,9 +432,7 @@ export class BeadsSprintIngester {
     // Detect circular dependencies via Kahn's algorithm
     const cycleNodes = detectCycles(tasks);
     if (cycleNodes) {
-      throw new Error(
-        `Circular dependency detected among tasks: ${cycleNodes.join(" → ")}`,
-      );
+      throw new Error(`Circular dependency detected among tasks: ${cycleNodes.join(" → ")}`);
     }
 
     return {
@@ -452,7 +450,13 @@ export class BeadsSprintIngester {
   private inferType(title: string): "task" | "bug" | "feature" {
     const lower = title.toLowerCase();
     if (lower.includes("bug") || lower.includes("fix")) return "bug";
-    if (lower.includes("feature") || lower.includes("add") || lower.includes("create") || lower.includes("implement")) return "feature";
+    if (
+      lower.includes("feature") ||
+      lower.includes("add") ||
+      lower.includes("create") ||
+      lower.includes("implement")
+    )
+      return "feature";
     return this.config.defaultType;
   }
 
@@ -464,10 +468,7 @@ export class BeadsSprintIngester {
    * Create a sprint epic bead (idempotent — skips if already exists).
    * Returns the epic bead ID.
    */
-  private async createEpicBead(
-    plan: SprintPlan,
-    sprintSourceLabel: string,
-  ): Promise<string> {
+  private async createEpicBead(plan: SprintPlan, sprintSourceLabel: string): Promise<string> {
     // Check if epic already exists
     try {
       validateLabel(sprintSourceLabel);
@@ -483,9 +484,10 @@ export class BeadsSprintIngester {
     }
 
     // Truncate description if too large
-    const description = plan.rawMarkdown.length > MAX_EPIC_DESCRIPTION_LENGTH
-      ? plan.rawMarkdown.slice(0, MAX_EPIC_DESCRIPTION_LENGTH) + "\n\n[truncated]"
-      : plan.rawMarkdown;
+    const description =
+      plan.rawMarkdown.length > MAX_EPIC_DESCRIPTION_LENGTH
+        ? plan.rawMarkdown.slice(0, MAX_EPIC_DESCRIPTION_LENGTH) + "\n\n[truncated]"
+        : plan.rawMarkdown;
 
     const escapedTitle = shellEscape(plan.title);
     const escapedDesc = shellEscape(description);
@@ -497,11 +499,13 @@ export class BeadsSprintIngester {
       throw new Error(`Failed to create sprint epic: ${result.stderr}`);
     }
 
-    const epicId = result.stdout.trim();
+    const rawEpicId = result.stdout.trim();
+    validateBeadId(rawEpicId);
+    const epicId = rawEpicId;
 
     // Add sprint-source and sprint:pending labels
     await this.executor.exec(`label add ${shellEscape(epicId)} ${shellEscape(sprintSourceLabel)}`);
-    await this.executor.exec(`label add ${shellEscape(epicId)} 'sprint:pending'`);
+    await this.executor.exec(`label add ${shellEscape(epicId)} ${shellEscape("sprint:pending")}`);
 
     this.logDebug(`Created epic bead ${epicId} for sprint ${plan.sprintId}`);
     return epicId;
@@ -527,9 +531,7 @@ export class BeadsSprintIngester {
    */
   private findExistingBead(existingBeads: Bead[], normalizedId: string): Bead | undefined {
     const sourceLabel = `source-task:${normalizedId}`;
-    return existingBeads.find(
-      (b) => (b.labels || []).includes(sourceLabel),
-    );
+    return existingBeads.find((b) => (b.labels || []).includes(sourceLabel));
   }
 
   /**
@@ -568,11 +570,18 @@ export class BeadsSprintIngester {
     // Validate all labels before use
     const validLabels = filterValidLabels(labels);
 
+    // Validate type and priority at runtime before shell interpolation
+    const validTypes = new Set(["task", "bug", "feature"]);
+    if (!validTypes.has(task.type)) {
+      throw new Error(`Invalid task type: ${task.type}`);
+    }
+    if (!Number.isInteger(task.priority) || task.priority < 0 || task.priority > 10) {
+      throw new Error(`Invalid task priority: ${task.priority}`);
+    }
+
     // Build br create command
     const escapedTitle = shellEscape(task.title);
-    const escapedDesc = task.description
-      ? ` --description ${shellEscape(task.description)}`
-      : "";
+    const escapedDesc = task.description ? ` --description ${shellEscape(task.description)}` : "";
 
     const cmd = `create ${escapedTitle} --type ${task.type} --priority ${task.priority}${escapedDesc}`;
 
@@ -582,7 +591,19 @@ export class BeadsSprintIngester {
     }
 
     // Extract bead ID from create output (br create outputs the new ID)
-    const createdId = result.stdout.trim() || task.beadId;
+    const rawId = result.stdout.trim();
+    let createdId: string;
+    if (rawId) {
+      try {
+        validateBeadId(rawId);
+        createdId = rawId;
+      } catch {
+        this.logDebug(`br create returned invalid ID "${rawId}", using fallback: ${task.beadId}`);
+        createdId = task.beadId;
+      }
+    } else {
+      createdId = task.beadId;
+    }
 
     // Add labels
     for (const label of validLabels) {
@@ -622,9 +643,7 @@ export class BeadsSprintIngester {
               );
               this.logDebug(`Wired cross-sprint dependency: ${task.id} depends on ${depId}`);
             } catch (e) {
-              result.warnings.push(
-                `Failed to wire dependency ${task.id} → ${depId}: ${e}`,
-              );
+              result.warnings.push(`Failed to wire dependency ${task.id} → ${depId}: ${e}`);
             }
           } else {
             // Add missing-dep label
@@ -650,9 +669,7 @@ export class BeadsSprintIngester {
           );
           this.logDebug(`Wired dependency: ${task.id} depends on ${depId}`);
         } catch (e) {
-          result.warnings.push(
-            `Failed to wire dependency ${task.id} → ${depId}: ${e}`,
-          );
+          result.warnings.push(`Failed to wire dependency ${task.id} → ${depId}: ${e}`);
         }
       }
     }
@@ -726,9 +743,7 @@ export function detectCycles(tasks: SprintTask[]): string[] | null {
   }
 
   // Kahn's: start with nodes having in-degree 0
-  const queue = [...inDegree.entries()]
-    .filter(([, d]) => d === 0)
-    .map(([id]) => id);
+  const queue = [...inDegree.entries()].filter(([, d]) => d === 0).map(([id]) => id);
   let processed = 0;
 
   while (queue.length > 0) {
@@ -741,11 +756,9 @@ export function detectCycles(tasks: SprintTask[]): string[] | null {
     }
   }
 
-  if (processed < tasks.length) {
+  if (processed < inDegree.size) {
     // Return nodes that are part of the cycle (in-degree > 0)
-    return [...inDegree.entries()]
-      .filter(([, d]) => d > 0)
-      .map(([id]) => id);
+    return [...inDegree.entries()].filter(([, d]) => d > 0).map(([id]) => id);
   }
   return null;
 }

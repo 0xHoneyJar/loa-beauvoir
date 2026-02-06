@@ -258,13 +258,11 @@ Third.
     });
 
     it("should reject sprint ID with spaces", () => {
-      expect(() => ingester.parseMarkdown(MINIMAL_SPRINT_MARKDOWN, "bad sprint id"))
-        .toThrow();
+      expect(() => ingester.parseMarkdown(MINIMAL_SPRINT_MARKDOWN, "bad sprint id")).toThrow();
     });
 
     it("should reject sprint ID with dots", () => {
-      expect(() => ingester.parseMarkdown(MINIMAL_SPRINT_MARKDOWN, "bad.sprint.id"))
-        .toThrow();
+      expect(() => ingester.parseMarkdown(MINIMAL_SPRINT_MARKDOWN, "bad.sprint.id")).toThrow();
     });
   });
 
@@ -289,8 +287,9 @@ A depends on B.
 B depends on A.
 `;
 
-      expect(() => ingester.parseMarkdown(cyclicMarkdown, "cyclic-test"))
-        .toThrow(/Circular dependency/);
+      expect(() => ingester.parseMarkdown(cyclicMarkdown, "cyclic-test")).toThrow(
+        /Circular dependency/,
+      );
     });
 
     it("should throw on transitive cycle (A→B→C→A)", () => {
@@ -321,14 +320,14 @@ B depends on A.
 C depends on B.
 `;
 
-      expect(() => ingester.parseMarkdown(transitiveCycleMarkdown, "cycle-test"))
-        .toThrow(/Circular dependency/);
+      expect(() => ingester.parseMarkdown(transitiveCycleMarkdown, "cycle-test")).toThrow(
+        /Circular dependency/,
+      );
     });
 
     it("should not throw on valid DAG", () => {
       // SAMPLE_SPRINT_MARKDOWN has valid dependency chain (no cycles)
-      expect(() => ingester.parseMarkdown(SAMPLE_SPRINT_MARKDOWN, "valid"))
-        .not.toThrow();
+      expect(() => ingester.parseMarkdown(SAMPLE_SPRINT_MARKDOWN, "valid")).not.toThrow();
     });
   });
 
@@ -407,10 +406,27 @@ C depends on B.
       // Now mock existing beads with source-task labels (new idempotency mechanism)
       mockExecutor.reset();
       mockExecutor.mockJsonResponse("list --label", [
-        { id: "epic-1", title: "Test Sprint", type: "epic", labels: ["sprint-source:test-sprint-001"] },
-        { id: "task-1-1", title: "Create the database schema", labels: ["source-task:task-1-1", "sprint-source:test-sprint-001"] },
-        { id: "task-1-2", title: "Implement API endpoints", labels: ["source-task:task-1-2", "sprint-source:test-sprint-001"] },
-        { id: "task-1-3", title: "Add frontend components", labels: ["source-task:task-1-3", "sprint-source:test-sprint-001"] },
+        {
+          id: "epic-1",
+          title: "Test Sprint",
+          type: "epic",
+          labels: ["sprint-source:test-sprint-001"],
+        },
+        {
+          id: "task-1-1",
+          title: "Create the database schema",
+          labels: ["source-task:task-1-1", "sprint-source:test-sprint-001"],
+        },
+        {
+          id: "task-1-2",
+          title: "Implement API endpoints",
+          labels: ["source-task:task-1-2", "sprint-source:test-sprint-001"],
+        },
+        {
+          id: "task-1-3",
+          title: "Add frontend components",
+          labels: ["source-task:task-1-3", "sprint-source:test-sprint-001"],
+        },
       ]);
 
       // Second ingest: should skip all
@@ -587,6 +603,91 @@ C depends on B.
       logSpy.mockRestore();
     });
 
+    it("should reject invalid task type at runtime", async () => {
+      const plan: SprintPlan = {
+        sprintId: "test",
+        sprintNumber: 1,
+        title: "Test",
+        rawMarkdown: "",
+        tasks: [
+          {
+            id: "TASK-1.1",
+            beadId: "task-1-1",
+            title: "Bad type task",
+            description: "",
+            priority: 2,
+            type: "evil; rm -rf /" as "task",
+            dependencies: [],
+            acceptanceCriteria: [],
+          },
+        ],
+      };
+
+      const result = await ingester.ingest(plan);
+      expect(result.failed).toBe(1);
+      expect(result.warnings.some((w) => w.includes("Invalid task type"))).toBe(true);
+    });
+
+    it("should reject invalid task priority at runtime", async () => {
+      const plan: SprintPlan = {
+        sprintId: "test",
+        sprintNumber: 1,
+        title: "Test",
+        rawMarkdown: "",
+        tasks: [
+          {
+            id: "TASK-1.1",
+            beadId: "task-1-1",
+            title: "Bad priority task",
+            description: "",
+            priority: -1,
+            type: "task",
+            dependencies: [],
+            acceptanceCriteria: [],
+          },
+        ],
+      };
+
+      const result = await ingester.ingest(plan);
+      expect(result.failed).toBe(1);
+      expect(result.warnings.some((w) => w.includes("Invalid task priority"))).toBe(true);
+    });
+
+    it("should validate createdId from br stdout (fallback on invalid)", async () => {
+      // Mock task create to return invalid ID (match --type task specifically,
+      // so epic create --type epic still uses default mock returning valid ID)
+      mockExecutor.mockResponse("--type task", {
+        success: true,
+        stdout: "invalid id with spaces!",
+        stderr: "",
+        exitCode: 0,
+      });
+
+      const plan: SprintPlan = {
+        sprintId: "test",
+        sprintNumber: 1,
+        title: "Test",
+        rawMarkdown: "",
+        tasks: [
+          {
+            id: "TASK-1.1",
+            beadId: "task-1-1",
+            title: "Task with bad stdout",
+            description: "",
+            priority: 2,
+            type: "task",
+            dependencies: [],
+            acceptanceCriteria: [],
+          },
+        ],
+      };
+
+      const result = await ingester.ingest(plan);
+      // Should still succeed (falls back to task.beadId)
+      expect(result.created).toBe(1);
+      expect(result.taskMapping.get("task-1-1")).toBe("task-1-1");
+    });
+
     it("should handle br create failure gracefully", async () => {
       mockExecutor.mockResponse("create ", {
         success: false,
@@ -625,7 +726,9 @@ C depends on B.
       const result = await ingester.ingest(plan);
 
       expect(result.created).toBe(1);
-      expect(result.warnings.some((w) => w.includes("TASK-99.99") && w.includes("not found"))).toBe(true);
+      expect(result.warnings.some((w) => w.includes("TASK-99.99") && w.includes("not found"))).toBe(
+        true,
+      );
 
       // Should have added missing-dep label
       const labelCalls = mockExecutor.execCalls.filter((c) => c.includes("label add"));
@@ -650,16 +753,52 @@ C depends on B.
   describe("detectCycles (standalone)", () => {
     it("should return null for no cycle", () => {
       const tasks: SprintTask[] = [
-        { id: "TASK-1.1", beadId: "task-1-1", title: "A", description: "", priority: 0, type: "task", dependencies: [], acceptanceCriteria: [] },
-        { id: "TASK-1.2", beadId: "task-1-2", title: "B", description: "", priority: 0, type: "task", dependencies: ["TASK-1.1"], acceptanceCriteria: [] },
+        {
+          id: "TASK-1.1",
+          beadId: "task-1-1",
+          title: "A",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: [],
+          acceptanceCriteria: [],
+        },
+        {
+          id: "TASK-1.2",
+          beadId: "task-1-2",
+          title: "B",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.1"],
+          acceptanceCriteria: [],
+        },
       ];
       expect(detectCycles(tasks)).toBeNull();
     });
 
     it("should detect direct cycle (A↔B)", () => {
       const tasks: SprintTask[] = [
-        { id: "TASK-1.1", beadId: "task-1-1", title: "A", description: "", priority: 0, type: "task", dependencies: ["TASK-1.2"], acceptanceCriteria: [] },
-        { id: "TASK-1.2", beadId: "task-1-2", title: "B", description: "", priority: 0, type: "task", dependencies: ["TASK-1.1"], acceptanceCriteria: [] },
+        {
+          id: "TASK-1.1",
+          beadId: "task-1-1",
+          title: "A",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.2"],
+          acceptanceCriteria: [],
+        },
+        {
+          id: "TASK-1.2",
+          beadId: "task-1-2",
+          title: "B",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.1"],
+          acceptanceCriteria: [],
+        },
       ];
       const cycle = detectCycles(tasks);
       expect(cycle).not.toBeNull();
@@ -669,9 +808,36 @@ C depends on B.
 
     it("should detect transitive cycle (A→B→C→A)", () => {
       const tasks: SprintTask[] = [
-        { id: "TASK-1.1", beadId: "task-1-1", title: "A", description: "", priority: 0, type: "task", dependencies: ["TASK-1.3"], acceptanceCriteria: [] },
-        { id: "TASK-1.2", beadId: "task-1-2", title: "B", description: "", priority: 0, type: "task", dependencies: ["TASK-1.1"], acceptanceCriteria: [] },
-        { id: "TASK-1.3", beadId: "task-1-3", title: "C", description: "", priority: 0, type: "task", dependencies: ["TASK-1.2"], acceptanceCriteria: [] },
+        {
+          id: "TASK-1.1",
+          beadId: "task-1-1",
+          title: "A",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.3"],
+          acceptanceCriteria: [],
+        },
+        {
+          id: "TASK-1.2",
+          beadId: "task-1-2",
+          title: "B",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.1"],
+          acceptanceCriteria: [],
+        },
+        {
+          id: "TASK-1.3",
+          beadId: "task-1-3",
+          title: "C",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: ["TASK-1.2"],
+          acceptanceCriteria: [],
+        },
       ];
       const cycle = detectCycles(tasks);
       expect(cycle).not.toBeNull();
@@ -680,6 +846,35 @@ C depends on B.
 
     it("should handle empty task list", () => {
       expect(detectCycles([])).toBeNull();
+    });
+
+    it("should not false-positive on duplicate task IDs", () => {
+      // If tasks array has duplicates, inDegree.size < tasks.length
+      // The fix uses inDegree.size (unique nodes) instead of tasks.length
+      const tasks: SprintTask[] = [
+        {
+          id: "TASK-1.1",
+          beadId: "task-1-1",
+          title: "A",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: [],
+          acceptanceCriteria: [],
+        },
+        {
+          id: "TASK-1.1",
+          beadId: "task-1-1",
+          title: "A duplicate",
+          description: "",
+          priority: 0,
+          type: "task",
+          dependencies: [],
+          acceptanceCriteria: [],
+        },
+      ];
+      // Should not detect a cycle (no actual cycle exists)
+      expect(detectCycles(tasks)).toBeNull();
     });
   });
 
