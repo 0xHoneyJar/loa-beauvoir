@@ -62,8 +62,11 @@ export {
 // Scheduler
 export { Scheduler, createBeauvoirScheduler } from "./scheduler/index.js";
 
-// Identity
-export { IdentityLoader, createIdentityLoader } from "./identity-loader.js";
+// Identity (from portable persistence framework)
+export {
+  IdentityLoader,
+  createIdentityLoader,
+} from "../../.claude/lib/persistence/identity/identity-loader.js";
 
 // Beads Persistence
 export {
@@ -99,7 +102,7 @@ export async function initializeLoa(config: {
     beadsDir?: string;
   };
 }): Promise<{
-  identity: import("./identity-loader.js").IdentityLoader;
+  identity: import("../../.claude/lib/persistence/identity/identity-loader.js").IdentityLoader;
   recovery: import("./recovery/index.js").RecoveryEngine;
   memory: import("./memory/index.js").SessionMemoryManager;
   scheduler: import("./scheduler/index.js").Scheduler;
@@ -108,7 +111,8 @@ export async function initializeLoa(config: {
   const { grimoiresDir, walDir, r2MountPath, beads: beadsConfig } = config;
 
   // Import modules
-  const { createIdentityLoader } = await import("./identity-loader.js");
+  const { createIdentityLoader } =
+    await import("../../.claude/lib/persistence/identity/identity-loader.js");
   const { ManifestSigner } = await import("./security/index.js");
   const { AuditLogger } = await import("./security/index.js");
   const { createRecoveryEngine } = await import("./recovery/index.js");
