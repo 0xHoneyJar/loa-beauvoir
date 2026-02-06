@@ -122,6 +122,12 @@ export class RecoveryEngine {
       source,
       reason,
     });
+
+    // Prune stale failure records to prevent unbounded memory growth
+    const windowStart = this.nowFn() - this.loopWindowMs;
+    if (this.failures.length > this.loopMaxFailures * 3) {
+      this.failures = this.failures.filter((f) => f.timestamp >= windowStart);
+    }
   }
 
   private transition(to: RecoveryState): void {

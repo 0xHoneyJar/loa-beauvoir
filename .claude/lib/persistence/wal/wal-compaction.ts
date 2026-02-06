@@ -8,25 +8,20 @@
 import type { WALEntry } from "./wal-entry.js";
 
 /**
- * Compact a list of WAL entries by keeping only the latest write per path.
- * Delete operations remove all previous writes for that path.
+ * Compact a list of WAL entries by keeping only the latest operation per path.
+ * For each path, only the most recent operation (write, mkdir, or delete) is kept.
+ * A write after a delete correctly supersedes the delete for that path.
  *
  * @returns Compacted entries in original order (stable sort by seq)
  */
 export function compactEntries(entries: WALEntry[]): WALEntry[] {
-  // Track the latest entry per path
+  // Track the latest entry per path — always keyed by the actual path.
+  // Each new operation for a path overwrites the previous one,
+  // so delete→write correctly keeps the write.
   const latestByPath = new Map<string, WALEntry>();
 
   for (const entry of entries) {
-    if (entry.operation === "delete") {
-      // Delete removes any prior write for this path
-      latestByPath.delete(entry.path);
-      // Keep the delete itself so replay knows to remove the path
-      latestByPath.set(`__delete__${entry.path}`, entry);
-    } else {
-      // write/mkdir: keep latest only
-      latestByPath.set(entry.path, entry);
-    }
+    latestByPath.set(entry.path, entry);
   }
 
   // Return entries sorted by seq (preserves causality)

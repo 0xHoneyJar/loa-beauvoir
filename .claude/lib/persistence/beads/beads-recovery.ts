@@ -11,6 +11,7 @@
  */
 
 import type { BeadsWALAdapter, BeadWALEntry } from "./beads-wal-adapter.js";
+import { PersistenceError } from "../types.js";
 
 // ── Security Constants ─────────────────────────────────────
 
@@ -38,13 +39,16 @@ const MAX_STRING_LENGTH = 1024;
  * Escapes embedded single quotes with '\'' idiom.
  */
 function shellEscape(value: string): string {
-  const truncated = value.length > MAX_STRING_LENGTH ? value.slice(0, MAX_STRING_LENGTH) : value;
+  // Strip null bytes which can truncate strings in some shells
+  const sanitized = value.replace(/\0/g, "");
+  const truncated =
+    sanitized.length > MAX_STRING_LENGTH ? sanitized.slice(0, MAX_STRING_LENGTH) : sanitized;
   return `'${truncated.replace(/'/g, "'\\''")}'`;
 }
 
 function validateBeadId(beadId: string): void {
   if (!beadId || !BEAD_ID_PATTERN.test(beadId) || beadId.length > 128) {
-    throw new Error("Invalid beadId");
+    throw new PersistenceError("BEADS_SHELL_ESCAPE", `Invalid beadId: ${beadId?.slice(0, 32)}`);
   }
 }
 
@@ -108,9 +112,12 @@ export class BeadsRecoveryHandler {
       },
     };
 
-    // Validate brCommand is safe
-    if (!/^[a-zA-Z0-9._/-]+$/.test(this.brCommand)) {
-      throw new Error("Invalid brCommand");
+    // Validate brCommand is safe (no path traversal, no shell metacharacters)
+    if (!/^[a-zA-Z0-9._/-]+$/.test(this.brCommand) || /\.\./.test(this.brCommand)) {
+      throw new PersistenceError(
+        "BEADS_WHITELIST_VIOLATION",
+        "Invalid brCommand: must not contain path traversal or shell metacharacters",
+      );
     }
   }
 

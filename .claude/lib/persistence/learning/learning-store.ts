@@ -72,17 +72,28 @@ export interface IQualityGateScorer {
   passes(learning: Partial<Learning>): boolean;
 }
 
+// UUID pattern for validating learning IDs (prevents path traversal)
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ── Store Implementation ───────────────────────────────────
 
 export class LearningStore {
   private readonly basePath: string;
   private readonly wal?: ILearningWAL;
   private readonly scorer?: IQualityGateScorer;
+  /** Promise chain for serializing write operations (prevents lost updates) */
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(config: LearningStoreConfig, scorer?: IQualityGateScorer) {
     this.basePath = config.basePath;
     this.wal = config.wal;
     this.scorer = scorer;
+  }
+
+  private validateId(id: string): void {
+    if (!UUID_PATTERN.test(id)) {
+      throw new Error(`Invalid learning ID: ${id}`);
+    }
   }
 
   private get learningsPath(): string {
@@ -142,20 +153,24 @@ export class LearningStore {
       return newLearning; // Discarded
     }
 
-    // Self-improvement requires human approval
-    if (learning.target === "loa") {
-      await this.savePendingSelf(newLearning);
-    } else {
-      newLearning.status = "active";
-      const store = await this.loadStore();
-      store.learnings.push(newLearning);
-      await this.saveStore(store);
-    }
+    // Serialize writes to prevent lost updates
+    await this.serializedWrite(async () => {
+      // Self-improvement requires human approval
+      if (learning.target === "loa") {
+        await this.savePendingSelf(newLearning);
+      } else {
+        newLearning.status = "active";
+        const store = await this.loadStore();
+        store.learnings.push(newLearning);
+        await this.saveStore(store);
+      }
+    });
 
     return newLearning;
   }
 
   async getLearning(id: string): Promise<Learning | null> {
+    this.validateId(id);
     const store = await this.loadStore();
     const learning = store.learnings.find((l) => l.id === id);
     if (learning) return learning;
@@ -208,73 +223,81 @@ export class LearningStore {
     status: LearningStatus,
     approvedBy?: string,
   ): Promise<Learning | null> {
-    // Try pending-self first (for approvals)
-    const pendingPath = path.join(this.pendingSelfDir, `${id}.json`);
+    this.validateId(id);
 
-    try {
-      const data = await fs.promises.readFile(pendingPath, "utf8");
-      const learning: Learning = JSON.parse(data);
+    return this.serializedWrite(async () => {
+      // Try pending-self first (for approvals)
+      const pendingPath = path.join(this.pendingSelfDir, `${id}.json`);
 
-      learning.status = status;
-      if (status === "approved" || status === "active") {
-        learning.approved_by = approvedBy;
-        learning.approved_at = new Date().toISOString();
-        learning.status = "active";
+      try {
+        const data = await fs.promises.readFile(pendingPath, "utf8");
+        const learning: Learning = JSON.parse(data);
 
-        const store = await this.loadStore();
-        store.learnings.push(learning);
-        await this.saveStore(store);
-        await fs.promises.unlink(pendingPath);
+        learning.status = status;
+        if (status === "approved" || status === "active") {
+          learning.approved_by = approvedBy;
+          learning.approved_at = new Date().toISOString();
+          learning.status = "active";
 
-        return learning;
-      } else if (status === "archived") {
-        await fs.promises.unlink(pendingPath);
-        return learning;
+          const store = await this.loadStore();
+          store.learnings.push(learning);
+          await this.saveStore(store);
+          await fs.promises.unlink(pendingPath);
+
+          return learning;
+        } else if (status === "archived") {
+          await fs.promises.unlink(pendingPath);
+          return learning;
+        }
+      } catch {
+        // Not in pending-self
       }
-    } catch {
-      // Not in pending-self
-    }
 
-    // Update in active store
-    const store = await this.loadStore();
-    const index = store.learnings.findIndex((l) => l.id === id);
-    if (index === -1) return null;
+      // Update in active store
+      const store = await this.loadStore();
+      const index = store.learnings.findIndex((l) => l.id === id);
+      if (index === -1) return null;
 
-    store.learnings[index].status = status;
-    if (approvedBy) {
-      store.learnings[index].approved_by = approvedBy;
-      store.learnings[index].approved_at = new Date().toISOString();
-    }
+      store.learnings[index].status = status;
+      if (approvedBy) {
+        store.learnings[index].approved_by = approvedBy;
+        store.learnings[index].approved_at = new Date().toISOString();
+      }
 
-    await this.saveStore(store);
-    return store.learnings[index];
+      await this.saveStore(store);
+      return store.learnings[index];
+    });
   }
 
   async recordApplication(id: string, success: boolean): Promise<Learning | null> {
-    const store = await this.loadStore();
-    const index = store.learnings.findIndex((l) => l.id === id);
-    if (index === -1) return null;
+    this.validateId(id);
 
-    const learning = store.learnings[index];
+    return this.serializedWrite(async () => {
+      const store = await this.loadStore();
+      const index = store.learnings.findIndex((l) => l.id === id);
+      if (index === -1) return null;
 
-    if (!learning.effectiveness) {
-      learning.effectiveness = {
-        applications: 0,
-        successes: 0,
-        failures: 0,
-      };
-    }
+      const learning = store.learnings[index];
 
-    learning.effectiveness.applications++;
-    if (success) {
-      learning.effectiveness.successes++;
-    } else {
-      learning.effectiveness.failures++;
-    }
-    learning.effectiveness.last_applied = new Date().toISOString();
+      if (!learning.effectiveness) {
+        learning.effectiveness = {
+          applications: 0,
+          successes: 0,
+          failures: 0,
+        };
+      }
 
-    await this.saveStore(store);
-    return learning;
+      learning.effectiveness.applications++;
+      if (success) {
+        learning.effectiveness.successes++;
+      } else {
+        learning.effectiveness.failures++;
+      }
+      learning.effectiveness.last_applied = new Date().toISOString();
+
+      await this.saveStore(store);
+      return learning;
+    });
   }
 
   // ── Query Helpers ────────────────────────────────────────
@@ -332,6 +355,16 @@ export class LearningStore {
   }
 
   // ── Private ──────────────────────────────────────────────
+
+  /** Serialize write operations to prevent concurrent read-modify-write races. */
+  private serializedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writeChain.then(fn);
+    this.writeChain = next.then(
+      () => {},
+      () => {},
+    ); // Keep chain alive on error
+    return next;
+  }
 
   private async savePendingSelf(learning: Learning): Promise<void> {
     await fs.promises.mkdir(this.pendingSelfDir, { recursive: true });

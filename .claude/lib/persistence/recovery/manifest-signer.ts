@@ -4,7 +4,15 @@
  * No external dependencies required (Ed25519 supported since Node.js 15).
  */
 
-import { createHash, sign, verify, generateKeyPairSync, type KeyObject } from "crypto";
+import {
+  createHash,
+  createPublicKey,
+  createPrivateKey,
+  sign,
+  verify,
+  generateKeyPairSync,
+  type KeyObject,
+} from "crypto";
 
 export interface SignedManifest {
   version: number;
@@ -67,8 +75,6 @@ export function generateKeyPair(): { publicKey: string; privateKey: string } {
  * Create a ManifestSigner from PEM-encoded key strings.
  */
 export function createManifestSigner(publicKeyPem: string, privateKeyPem?: string): ManifestSigner {
-  const { createPublicKey, createPrivateKey } = require("crypto");
-
   const publicKey = createPublicKey(publicKeyPem);
   const privateKey = privateKeyPem ? createPrivateKey(privateKeyPem) : null;
 

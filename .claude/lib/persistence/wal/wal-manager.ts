@@ -245,7 +245,7 @@ export class WALManager {
 
           if (!verifyEntry(entry)) {
             errors++;
-            break; // Truncate at corruption
+            continue; // Skip corrupt entry, keep replaying valid ones
           }
 
           await callback(entry);
@@ -268,7 +268,12 @@ export class WALManager {
     const entries: WALEntry[] = [];
     const max = limit ?? Infinity;
 
-    for (const segment of this.checkpoint!.segments) {
+    // Sort segments by creation time (matches replay() ordering)
+    const sortedSegments = [...this.checkpoint!.segments].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
+    for (const segment of sortedSegments) {
       const segPath = join(this.walDir, segment.id);
       if (!existsSync(segPath)) continue;
 
@@ -477,17 +482,37 @@ export class WALManager {
 
     if (existsSync(cpPath)) {
       const content = await readFile(cpPath, "utf-8");
-      this.checkpoint = JSON.parse(content);
+      try {
+        const parsed = JSON.parse(content);
+        // Validate required shape before assignment
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray(parsed.segments) &&
+          typeof parsed.lastSeq === "number"
+        ) {
+          this.checkpoint = parsed;
+        } else {
+          this.checkpoint = this.emptyCheckpoint();
+        }
+      } catch {
+        // Corrupt checkpoint file — start fresh
+        this.checkpoint = this.emptyCheckpoint();
+      }
     } else {
-      this.checkpoint = {
-        lastSeq: 0,
-        activeSegment: "",
-        segments: [],
-        lastCheckpointAt: new Date().toISOString(),
-        rotationPhase: "none",
-      };
+      this.checkpoint = this.emptyCheckpoint();
       await this.saveCheckpoint();
     }
+  }
+
+  private emptyCheckpoint(): WALCheckpoint {
+    return {
+      lastSeq: 0,
+      activeSegment: "",
+      segments: [],
+      lastCheckpointAt: new Date().toISOString(),
+      rotationPhase: "none",
+    };
   }
 
   private async saveCheckpoint(): Promise<void> {

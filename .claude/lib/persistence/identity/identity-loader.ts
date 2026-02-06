@@ -11,6 +11,7 @@
 import { createHash } from "crypto";
 import { existsSync } from "fs";
 import { readFile, appendFile } from "fs/promises";
+import { PersistenceError } from "../types.js";
 import { FileWatcher, type FileChangeCallback } from "./file-watcher.js";
 
 // ── Types ──────────────────────────────────────────────────
@@ -61,7 +62,10 @@ export class IdentityLoader {
    */
   async load(): Promise<IdentityDocument> {
     if (!existsSync(this.config.beauvoirPath)) {
-      throw new Error(`BEAUVOIR.md not found at ${this.config.beauvoirPath}`);
+      throw new PersistenceError(
+        "IDENTITY_PARSE_FAILED",
+        `BEAUVOIR.md not found at ${this.config.beauvoirPath}`,
+      );
     }
 
     const content = await readFile(this.config.beauvoirPath, "utf-8");
@@ -93,7 +97,6 @@ export class IdentityLoader {
 
     this.watcher.start(async (filePath) => {
       try {
-        const prev = this.identity;
         await this.load();
         if (callback) {
           await callback(filePath);

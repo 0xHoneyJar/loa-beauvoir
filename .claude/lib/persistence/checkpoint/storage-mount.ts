@@ -8,7 +8,7 @@
 import { createHash } from "crypto";
 import { existsSync } from "fs";
 import { readFile, writeFile, mkdir, rename, unlink, readdir, stat } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, resolve, normalize } from "path";
 
 export interface ICheckpointStorage {
   isAvailable(): Promise<boolean>;
@@ -21,10 +21,14 @@ export interface ICheckpointStorage {
 }
 
 export class MountCheckpointStorage implements ICheckpointStorage {
+  private readonly resolvedRoot: string;
+
   constructor(
     private readonly mountPath: string,
     private readonly prefix: string = "grimoires",
-  ) {}
+  ) {
+    this.resolvedRoot = resolve(mountPath, prefix);
+  }
 
   async isAvailable(): Promise<boolean> {
     if (!existsSync(this.mountPath)) return false;
@@ -36,12 +40,20 @@ export class MountCheckpointStorage implements ICheckpointStorage {
     }
   }
 
-  private resolve(relativePath: string): string {
-    return join(this.mountPath, this.prefix, relativePath);
+  /**
+   * Resolve a relative path within the mount, with path traversal protection.
+   * Rejects any path that would escape the mount root (e.g., ../../etc/passwd).
+   */
+  private resolvePath(relativePath: string): string {
+    const resolved = resolve(this.resolvedRoot, normalize(relativePath));
+    if (!resolved.startsWith(this.resolvedRoot)) {
+      throw new Error(`Path traversal rejected: ${relativePath}`);
+    }
+    return resolved;
   }
 
   async readFile(relativePath: string): Promise<Buffer | null> {
-    const path = this.resolve(relativePath);
+    const path = this.resolvePath(relativePath);
     if (!existsSync(path)) return null;
     try {
       return await readFile(path);
@@ -51,7 +63,7 @@ export class MountCheckpointStorage implements ICheckpointStorage {
   }
 
   async writeFile(relativePath: string, content: Buffer): Promise<boolean> {
-    const path = this.resolve(relativePath);
+    const path = this.resolvePath(relativePath);
     try {
       await mkdir(dirname(path), { recursive: true });
       const tmpPath = `${path}.tmp.${process.pid}`;
@@ -64,7 +76,7 @@ export class MountCheckpointStorage implements ICheckpointStorage {
   }
 
   async deleteFile(relativePath: string): Promise<boolean> {
-    const path = this.resolve(relativePath);
+    const path = this.resolvePath(relativePath);
     try {
       await unlink(path);
       return true;
@@ -102,7 +114,7 @@ export class MountCheckpointStorage implements ICheckpointStorage {
   }
 
   async stat(relativePath: string): Promise<{ size: number; mtime: Date } | null> {
-    const path = this.resolve(relativePath);
+    const path = this.resolvePath(relativePath);
     try {
       const s = await stat(path);
       return { size: s.size, mtime: s.mtime };
