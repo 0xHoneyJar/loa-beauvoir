@@ -69,10 +69,57 @@ export {
 } from "./recovery/manifest-signer.js";
 
 // ── Beads Bridge ─────────────────────────────────────────────
-// (populated by TASK-2.1)
+export {
+  BeadsWALAdapter,
+  type IBeadsWAL,
+  type IBeadsWALEntry,
+  type BeadWALEntry,
+  type BeadOperation,
+  type BeadsWALConfig,
+} from "./beads/beads-wal-adapter.js";
+export {
+  BeadsRecoveryHandler,
+  type RecoveryResult as BeadsRecoveryResult,
+  type BeadsRecoveryConfig,
+  type IShellExecutor,
+} from "./beads/beads-recovery.js";
 
 // ── Learning ─────────────────────────────────────────────────
-// (populated by TASK-2.2)
+export {
+  LearningStore,
+  type Learning,
+  type LearningsStore,
+  type LearningSource,
+  type LearningTarget,
+  type LearningStatus,
+  type QualityGates,
+  type ILearningWAL,
+  type LearningStoreConfig,
+  type IQualityGateScorer,
+} from "./learning/learning-store.js";
+export {
+  scoreAllGates,
+  passesQualityGates,
+  scoreDiscoveryDepth,
+  scoreReusability,
+  scoreTriggerClarity,
+  scoreVerification,
+  DefaultQualityGateScorer,
+  GATE_THRESHOLDS,
+  MINIMUM_TOTAL_SCORE,
+} from "./learning/quality-gates.js";
 
 // ── Identity ─────────────────────────────────────────────────
-// (populated by TASK-2.3)
+export {
+  IdentityLoader,
+  createIdentityLoader,
+  type IdentityDocument,
+  type Principle,
+  type Boundary,
+  type IdentityLoaderConfig,
+} from "./identity/identity-loader.js";
+export {
+  FileWatcher,
+  type FileWatcherConfig,
+  type FileChangeCallback,
+} from "./identity/file-watcher.js";

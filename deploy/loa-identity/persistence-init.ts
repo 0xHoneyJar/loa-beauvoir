@@ -5,16 +5,22 @@
  * deploy/loa-identity/ (container-specific paths and env vars).
  *
  * Usage:
- *   const { circuitBreaker, walManager, checkpointProtocol, recoveryEngine }
+ *   const { circuitBreaker, walManager, checkpointProtocol, recoveryEngine,
+ *           beadsWALAdapter, beadsRecovery, learningStore, identityLoader }
  *     = await initializePersistence();
  *
  * @module deploy/loa-identity/persistence-init
  */
 
 import type { IRecoverySource } from "../../.claude/lib/persistence/recovery/recovery-source.js";
+import { BeadsRecoveryHandler } from "../../.claude/lib/persistence/beads/beads-recovery.js";
+import { BeadsWALAdapter } from "../../.claude/lib/persistence/beads/beads-wal-adapter.js";
 import { CheckpointProtocol } from "../../.claude/lib/persistence/checkpoint/checkpoint-protocol.js";
 import { MountCheckpointStorage } from "../../.claude/lib/persistence/checkpoint/storage-mount.js";
 import { CircuitBreaker } from "../../.claude/lib/persistence/circuit-breaker.js";
+import { IdentityLoader } from "../../.claude/lib/persistence/identity/identity-loader.js";
+import { LearningStore } from "../../.claude/lib/persistence/learning/learning-store.js";
+import { DefaultQualityGateScorer } from "../../.claude/lib/persistence/learning/quality-gates.js";
 import { createManifestSigner } from "../../.claude/lib/persistence/recovery/manifest-signer.js";
 import { RecoveryEngine } from "../../.claude/lib/persistence/recovery/recovery-engine.js";
 import { MountRecoverySource } from "../../.claude/lib/persistence/recovery/sources/mount-source.js";
@@ -35,6 +41,10 @@ export interface ContainerPersistenceConfig {
     maxFailures?: number;
     resetTimeMs?: number;
   };
+  /** Beads directory. Default: '.beads' */
+  beadsDir?: string;
+  /** br command path. Default: from LOA_BR_COMMAND or 'br' */
+  brCommand?: string;
 }
 
 // ── Initialization ───────────────────────────────────────────
@@ -103,10 +113,42 @@ export async function initializePersistence(config?: ContainerPersistenceConfig)
     },
   });
 
+  // ── Sprint 2: Beads Bridge ────────────────────────────────
+
+  const beadsWALAdapter = new BeadsWALAdapter(walManager, {
+    pathPrefix: ".beads/wal",
+  });
+
+  const beadsRecovery = new BeadsRecoveryHandler(beadsWALAdapter, {
+    beadsDir: ".beads",
+    brCommand: process.env.LOA_BR_COMMAND ?? "br",
+    skipSync: false,
+  });
+
+  // ── Sprint 2: Learning Store ─────────────────────────────
+
+  const learningStore = new LearningStore(
+    {
+      basePath: `${grimoiresDir}/a2a/compound`,
+    },
+    new DefaultQualityGateScorer(),
+  );
+
+  // ── Sprint 2: Identity Loader ────────────────────────────
+
+  const identityLoader = new IdentityLoader({
+    beauvoirPath: `${grimoiresDir}/BEAUVOIR.md`,
+    notesPath: `${grimoiresDir}/NOTES.md`,
+  });
+
   return {
     circuitBreaker,
     walManager,
     checkpointProtocol,
     recoveryEngine,
+    beadsWALAdapter,
+    beadsRecovery,
+    learningStore,
+    identityLoader,
   };
 }
