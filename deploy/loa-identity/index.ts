@@ -87,6 +87,7 @@ export {
   type BeadsRecoveryConfig,
   type BeadsSchedulerConfig,
   type BeadsPersistenceConfig,
+  type BeadsPersistenceOpts,
   type BeadsPersistenceStatus,
 } from "./beads/index.js";
 
@@ -100,6 +101,7 @@ export async function initializeLoa(config: {
   beads?: {
     enabled?: boolean;
     beadsDir?: string;
+    scheduler?: import("./beads/index.js").BeadsSchedulerConfig;
   };
 }): Promise<{
   identity: import("../../.claude/lib/persistence/identity/identity-loader.js").IdentityLoader;
@@ -107,6 +109,8 @@ export async function initializeLoa(config: {
   memory: import("./memory/index.js").SessionMemoryManager;
   scheduler: import("./scheduler/index.js").Scheduler;
   beads?: import("./beads/index.js").BeadsPersistenceService;
+  /** Idempotent shutdown — caller registers signal handlers */
+  shutdown: () => void;
 }> {
   const { grimoiresDir, walDir, r2MountPath, beads: beadsConfig } = config;
 
@@ -163,21 +167,53 @@ export async function initializeLoa(config: {
   let beadsPersistence: import("./beads/index.js").BeadsPersistenceService | undefined;
 
   if (beadsConfig?.enabled !== false) {
-    const { createBeadsPersistenceService, createDefaultBeadsConfig } =
+    const { createBeadsPersistenceService, createDefaultBeadsConfig, createBeadsRunStateManager } =
       await import("./beads/index.js");
+
+    const runStateManager = createBeadsRunStateManager({ verbose: false });
+
+    // Single source of truth for scheduler config — normalize once, pass everywhere
+    const schedulerConfig = {
+      healthCheck: { enabled: true, ...beadsConfig?.scheduler?.healthCheck },
+      autoSync: { enabled: true, ...beadsConfig?.scheduler?.autoSync },
+      staleCheck: { enabled: true, ...beadsConfig?.scheduler?.staleCheck },
+      workQueue: { enabled: false, ...beadsConfig?.scheduler?.workQueue },
+    };
 
     beadsPersistence = createBeadsPersistenceService(
       createDefaultBeadsConfig({
         enabled: beadsConfig?.enabled ?? true,
         beadsDir: beadsConfig?.beadsDir ?? ".beads",
+        scheduler: schedulerConfig,
       }),
-      walManager,
-      scheduler,
+      { wal: walManager, scheduler, runStateManager },
     );
 
-    await beadsPersistence.initialize();
-    console.log("[loa] Beads persistence initialized");
+    try {
+      await beadsPersistence.initialize();
+      scheduler.start();
+      console.log("[loa] Beads persistence initialized, scheduler started");
+    } catch (err) {
+      try {
+        scheduler.stop();
+      } catch (stopErr) {
+        console.error("[loa] Defensive scheduler.stop() failed:", stopErr);
+      }
+      throw err;
+    }
   }
 
-  return { identity, recovery, memory, scheduler, beads: beadsPersistence };
+  // Return cleanup handle — caller (top-level entrypoint) owns signal registration
+  let stopped = false;
+  const shutdown = () => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      scheduler.stop();
+    } catch (err) {
+      console.error("[loa] scheduler.stop() failed during shutdown:", err);
+    }
+  };
+
+  return { identity, recovery, memory, scheduler, beads: beadsPersistence, shutdown };
 }
