@@ -153,6 +153,50 @@ export interface ISchedulerRegistry {
   register(task: SchedulerRegistration): void;
 }
 
+/**
+ * A bead included in compiled context, with relevance scoring
+ */
+export interface CompiledBead {
+  /** The bead data */
+  bead: Bead;
+
+  /** Relevance score (0-1) */
+  score: number;
+
+  /** Reason for inclusion */
+  reason: string;
+}
+
+/**
+ * Result of context compilation for a task
+ */
+export interface ContextCompilationResult {
+  /** The task ID this compilation targets */
+  taskId: string;
+
+  /** Compiled beads ordered by relevance */
+  beads: CompiledBead[];
+
+  /** Estimated token count of compiled context */
+  tokenEstimate: number;
+
+  /** Token budget (advisory — actual compilation uses upstream config) */
+  tokenBudget: number;
+
+  /** Trace log entries for debugging */
+  trace: string[];
+}
+
+/**
+ * Interface for context compilers used by the work queue
+ */
+export interface IContextCompiler {
+  compile(
+    taskId: string,
+    options?: { tokenBudget?: number },
+  ): Promise<ContextCompilationResult | null>;
+}
+
 // =============================================================================
 // Work Queue Labels (extending base LABELS)
 // =============================================================================

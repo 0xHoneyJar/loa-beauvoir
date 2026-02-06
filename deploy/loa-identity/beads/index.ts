@@ -85,4 +85,25 @@ export {
   type StaleSessionRecoveryResult,
   type SchedulerRegistration,
   type ISchedulerRegistry,
+  type IContextCompiler,
+  type ContextCompilationResult,
+  type CompiledBead,
 } from "./beads-work-queue.js";
+
+// Sprint Ingester (Phase 6)
+export {
+  BeadsSprintIngester,
+  createBeadsSprintIngester,
+  normalizeTaskId,
+  detectCycles,
+  type SprintTask,
+  type SprintPlan,
+  type IngestionResult,
+  type IngesterConfig,
+} from "./beads-sprint-ingester.js";
+
+// ContextCompiler Adapter (Phase 7)
+export {
+  BeadsContextCompilerAdapter,
+  createBeadsContextCompilerAdapter,
+} from "./beads-context-compiler-adapter.js";
