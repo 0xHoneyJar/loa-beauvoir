@@ -29,6 +29,14 @@ import {
 
 const execAsync = promisify(exec);
 
+/**
+ * GNU timeout(1) exit code when time limit is reached.
+ * Note: timeout is GNU coreutils — not available on macOS by default.
+ * macOS users can install via `brew install coreutils` (provides `gtimeout`).
+ * TODO: Consider cross-platform alternative (Node setTimeout + SIGTERM) for macOS.
+ */
+const TIMEOUT_EXIT_CODE = 124;
+
 // =============================================================================
 // Types & Interfaces
 // =============================================================================
@@ -159,6 +167,7 @@ export const WORK_QUEUE_LABELS = {
   // Task state labels (aliases for upstream labels)
   TASK_READY: LABELS.STATUS_READY,
   TASK_BLOCKED: LABELS.STATUS_BLOCKED,
+  // TODO: Reference upstream LABELS constants once STATUS_IN_PROGRESS/STATUS_DONE are defined
   TASK_IN_PROGRESS: "in_progress",
   TASK_DONE: "done",
 
@@ -332,14 +341,14 @@ export class BeadsWorkQueue {
       // Check run state - only process if RUNNING
       const state = await this.runState.getRunState();
       if (state !== "RUNNING") {
-        this.log(`Skipping - run state is ${state}`);
+        this.logDebug(`Skipping - run state is ${state}`);
         return;
       }
 
       // Claim next task
       const claim = await this.claimNextTask();
       if (!claim) {
-        this.log("No ready tasks");
+        this.logDebug("No ready tasks");
         return;
       }
 
@@ -679,8 +688,10 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
         this.activeSession!.on("close", (code, signal) => {
           this.activeSession = null;
 
-          if (signal === "SIGTERM") {
-            // Timeout - session should have recorded handoff
+          // GNU timeout(1) exits with code 124 when the time limit is reached.
+          // It sends SIGTERM to its child, but the wrapper process itself exits
+          // normally with code 124 — so signal will be null, not "SIGTERM".
+          if (signal === "SIGTERM" || code === TIMEOUT_EXIT_CODE) {
             this.log(`Session timed out for task ${claim.taskId}`);
             resolve();
           } else if (code === 0) {
@@ -761,7 +772,7 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
       );
 
       if (!inProgressTasks || inProgressTasks.length === 0) {
-        this.log("No in_progress tasks found");
+        this.logDebug("No in_progress tasks found");
         return result;
       }
 
@@ -787,7 +798,7 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
           const claimedAt = await this.parseClaimTimestamp(task.id);
 
           if (!claimedAt) {
-            this.log(`Task ${task.id}: no claim timestamp found, skipping`);
+            this.logDebug(`Task ${task.id}: no claim timestamp found, skipping`);
             continue;
           }
 
@@ -929,10 +940,14 @@ Action: Task returned to ready queue
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get current work queue configuration
+   * Get current work queue configuration (deep copy — callers cannot
+   * mutate internal state via nested circuitBreaker reference).
    */
   getConfig(): Readonly<WorkQueueConfig> {
-    return { ...this.config };
+    return {
+      ...this.config,
+      circuitBreaker: { ...this.config.circuitBreaker },
+    };
   }
 
   /**
