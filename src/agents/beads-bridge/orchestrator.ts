@@ -124,14 +124,18 @@ export class DispatchOrchestrator {
     const refreshed = await this.br.get(task.id);
     const sessionLabels = getLabelsWithPrefix(refreshed.labels, "session:");
     if (sessionLabels.length > 1) {
-      // Concurrent claim — back off and release
-      await this.br.labelRemove(task.id, sessionLabel);
+      // Concurrent claim — back off and release (best-effort cleanup)
+      await this.br.labelRemove(task.id, sessionLabel).catch(() => {});
       // Safety: verify task still has at least one session label
-      const recheck = await this.br.get(task.id);
-      const remaining = getLabelsWithPrefix(recheck.labels, "session:");
-      if (remaining.length === 0) {
-        // Both claimants backed off — restore ready label
-        await this.br.labelAdd(task.id, "ready");
+      try {
+        const recheck = await this.br.get(task.id);
+        const remaining = getLabelsWithPrefix(recheck.labels, "session:");
+        if (remaining.length === 0) {
+          // Both claimants backed off — restore ready label
+          await this.br.labelAdd(task.id, "ready").catch(() => {});
+        }
+      } catch {
+        // Best-effort: if recheck fails, we still throw TOCTOU
       }
       throw new Error(`TOCTOU: task ${task.id} claimed concurrently`);
     }
@@ -203,6 +207,7 @@ export class DispatchOrchestrator {
 
       const record = this.state.getByRunId(evt.runId);
       if (!record) return; // Not our dispatch
+      if (record.completedAt) return; // Already processed (duplicate event)
 
       const phase = evt.data?.phase;
       if (phase === "end" || phase === "error") {

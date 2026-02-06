@@ -29,6 +29,31 @@ export interface BeadRecord {
   [key: string]: unknown;
 }
 
+// -- Output validation --------------------------------------------------------
+
+/** Validate shape of a BeadRecord from br CLI output. */
+function assertBeadRecord(raw: unknown): asserts raw is BeadRecord {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid br output: expected object");
+  }
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.id !== "string" || typeof obj.status !== "string") {
+    throw new Error("Invalid br output: missing id or status");
+  }
+  if (!Array.isArray(obj.labels)) {
+    throw new Error("Invalid br output: labels must be an array");
+  }
+}
+
+function assertBeadRecordArray(raw: unknown): asserts raw is BeadRecord[] {
+  if (!Array.isArray(raw)) {
+    throw new Error("Invalid br output: expected array");
+  }
+  for (const item of raw) {
+    assertBeadRecord(item);
+  }
+}
+
 // -- BrExecutor class ---------------------------------------------------------
 
 export class BrExecutor {
@@ -41,7 +66,11 @@ export class BrExecutor {
   /** Execute a br command and parse JSON output. */
   async exec<T = unknown>(args: string[], timeoutMs: number): Promise<T> {
     const { stdout } = await execFile(this.brPath, args, { timeout: timeoutMs });
-    return JSON.parse(stdout) as T;
+    try {
+      return JSON.parse(stdout) as T;
+    } catch (err) {
+      throw new Error(`Invalid br JSON output: ${(err as Error).message}`);
+    }
   }
 
   /** Execute a br command that returns plain text (or no output). */
@@ -53,18 +82,24 @@ export class BrExecutor {
   /** List beads with a specific label. */
   async listByLabel(label: string): Promise<BeadRecord[]> {
     validateLabel(label);
-    return this.exec<BeadRecord[]>(["list", "--label", label, "--json"], QUERY_TIMEOUT_MS);
+    const raw = await this.exec<unknown>(["list", "--label", label, "--json"], QUERY_TIMEOUT_MS);
+    assertBeadRecordArray(raw);
+    return raw;
   }
 
   /** List all beads as JSON. */
   async listAll(): Promise<BeadRecord[]> {
-    return this.exec<BeadRecord[]>(["list", "--json"], QUERY_TIMEOUT_MS);
+    const raw = await this.exec<unknown>(["list", "--json"], QUERY_TIMEOUT_MS);
+    assertBeadRecordArray(raw);
+    return raw;
   }
 
   /** Get a single bead by ID. */
   async get(beadId: string): Promise<BeadRecord> {
     validateBeadId(beadId);
-    return this.exec<BeadRecord>(["show", beadId, "--json"], QUERY_TIMEOUT_MS);
+    const raw = await this.exec<unknown>(["show", beadId, "--json"], QUERY_TIMEOUT_MS);
+    assertBeadRecord(raw);
+    return raw;
   }
 
   /** Add a label to a bead. */
@@ -87,10 +122,13 @@ export class BrExecutor {
     await this.execRaw(["close", beadId], MUTATION_TIMEOUT_MS);
   }
 
-  /** Add a comment to a bead, truncating to MAX_COMMENT_LENGTH. */
+  /** Add a comment to a bead, sanitizing and truncating to MAX_COMMENT_LENGTH. */
   async comment(beadId: string, text: string): Promise<void> {
     validateBeadId(beadId);
-    const truncated = text.length > MAX_COMMENT_LENGTH ? text.slice(0, MAX_COMMENT_LENGTH) : text;
+    // Strip control characters except \n and \t
+    const sanitized = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+    const truncated =
+      sanitized.length > MAX_COMMENT_LENGTH ? sanitized.slice(0, MAX_COMMENT_LENGTH) : sanitized;
     await this.execRaw(["comment", beadId, truncated], MUTATION_TIMEOUT_MS);
   }
 }

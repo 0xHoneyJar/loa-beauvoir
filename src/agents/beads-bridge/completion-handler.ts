@@ -83,7 +83,12 @@ export class CompletionHandler {
 
       const allDepsClosed = deps.every((depId) => {
         const dep = tasks.find((t) => t.id === depId);
-        return dep?.status === "closed";
+        if (!dep) {
+          // Missing dep (different sprint, deleted) — treat as not closed
+          console.warn(`cascadeUnblocks: dep ${depId} not found in sprint for task ${task.id}`);
+          return false;
+        }
+        return dep.status === "closed";
       });
 
       if (allDepsClosed) {

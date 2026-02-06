@@ -154,6 +154,28 @@ describe("CompletionHandler", () => {
       expect(unblocked).toEqual([]);
     });
 
+    it("does not unblock when dep is missing from sprint query (H-1)", async () => {
+      const br = makeMockBr();
+      // Task C depends on "external-dep" which is NOT in the sprint query results
+      const tasks: BeadRecord[] = [
+        { id: "a", title: "A", status: "closed", labels: ["done"] },
+        {
+          id: "c",
+          title: "C",
+          status: "open",
+          labels: ["blocked"],
+          depends_on: ["a", "external-dep"],
+        },
+      ];
+      vi.mocked(br.listByLabel).mockResolvedValue(tasks);
+      const handler = new CompletionHandler(br, { readLatestAssistantReply: vi.fn() });
+
+      const unblocked = await handler.cascadeUnblocks("sprint-1");
+
+      // Should NOT unblock because external-dep is missing (treated as not closed)
+      expect(unblocked).toEqual([]);
+    });
+
     it("unblocks tasks with empty depends_on", async () => {
       const br = makeMockBr();
       const tasks: BeadRecord[] = [

@@ -195,6 +195,87 @@ describe("DispatchOrchestrator", () => {
     });
   });
 
+  describe("duplicate event guard (M-1)", () => {
+    it("ignores lifecycle event when record already completed", async () => {
+      const task: BeadRecord = {
+        id: "task-1",
+        title: "Test Task",
+        status: "open",
+        labels: ["ready", "sprint-source:s1"],
+      };
+
+      // Wire execFile to succeed for all operations
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], _opts: unknown, cb?: Function) => {
+          const key = args.join(" ");
+          let stdout = "";
+          if (key.includes("list --json")) {
+            stdout = makeBeadListJson([task]);
+          } else if (key.includes("show")) {
+            stdout = makeBeadJson({
+              ...task,
+              labels: ["ready", "sprint-source:s1", "session:bridge-mock"],
+            });
+          } else if (key.includes("list --label sprint-source")) {
+            stdout = makeBeadListJson([]);
+          }
+          if (cb) {
+            cb(null, { stdout, stderr: "" });
+          }
+          return { stdout, stderr: "" };
+        },
+      );
+
+      let lifecycleListener: ((evt: unknown) => void) | null = null;
+      const deps = makeDeps({
+        onAgentEvent: vi.fn().mockImplementation((listener: (evt: unknown) => void) => {
+          lifecycleListener = listener;
+          return () => {
+            lifecycleListener = null;
+          };
+        }),
+      });
+
+      const orch = new DispatchOrchestrator(deps);
+      orch.restoreOnce();
+
+      // Dispatch a task
+      await orch.dispatchBatch([task], {});
+      const callCount1 = (deps.readLatestAssistantReply as ReturnType<typeof vi.fn>).mock.calls
+        .length;
+
+      // Fire first lifecycle end event
+      lifecycleListener!({
+        runId: "mock-run-id",
+        seq: 1,
+        stream: "lifecycle",
+        ts: Date.now(),
+        data: { phase: "end" },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      const callCount2 = (deps.readLatestAssistantReply as ReturnType<typeof vi.fn>).mock.calls
+        .length;
+      // Should have processed (readLatestAssistantReply called)
+      expect(callCount2).toBeGreaterThan(callCount1);
+
+      // Fire duplicate lifecycle end event
+      lifecycleListener!({
+        runId: "mock-run-id",
+        seq: 2,
+        stream: "lifecycle",
+        ts: Date.now(),
+        data: { phase: "end" },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Should NOT process again (readLatestAssistantReply not called again)
+      const callCount3 = (deps.readLatestAssistantReply as ReturnType<typeof vi.fn>).mock.calls
+        .length;
+      expect(callCount3).toBe(callCount2);
+    });
+  });
+
   describe("lifecycle listener", () => {
     it("registers listener on restoreOnce", () => {
       const deps = makeDeps();
