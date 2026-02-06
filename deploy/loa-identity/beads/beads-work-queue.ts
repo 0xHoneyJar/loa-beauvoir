@@ -277,7 +277,14 @@ export class BeadsWorkQueue {
       verbose?: boolean;
     },
   ) {
-    this.config = { ...DEFAULT_WORK_QUEUE_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_WORK_QUEUE_CONFIG,
+      ...config,
+      circuitBreaker: {
+        ...DEFAULT_WORK_QUEUE_CONFIG.circuitBreaker,
+        ...config.circuitBreaker,
+      },
+    };
     this.runState = runStateManager;
 
     const brCommand = options?.brCommand ?? "br";
@@ -384,6 +391,28 @@ export class BeadsWorkQueue {
       await this.addLabel(task.id, WORK_QUEUE_LABELS.TASK_IN_PROGRESS);
       await this.addLabel(task.id, `${WORK_QUEUE_LABELS.SESSION_PREFIX}${sessionId}`);
 
+      // TOCTOU mitigation: verify we're the sole claimant.
+      // If two agents race, both may complete the claim sequence above.
+      // Re-query and check for multiple session:* labels (like DynamoDB
+      // conditional writes — check-after-write).
+      // TODO: Push atomic claiming into br itself (`br claim --label ready --limit 1`)
+      const verified = await this.queryBeadsJson<Bead>(`show ${shellEscape(task.id)} --json`);
+      if (verified) {
+        const sessionLabels =
+          verified.labels?.filter((l: string) => l.startsWith(WORK_QUEUE_LABELS.SESSION_PREFIX)) ??
+          [];
+        if (sessionLabels.length > 1) {
+          // Another agent claimed simultaneously — back off gracefully
+          this.log(
+            `Task ${task.id}: concurrent claim detected (${sessionLabels.length} sessions), backing off`,
+          );
+          await this.removeLabel(task.id, `${WORK_QUEUE_LABELS.SESSION_PREFIX}${sessionId}`);
+          await this.removeLabel(task.id, WORK_QUEUE_LABELS.TASK_IN_PROGRESS);
+          await this.addLabel(task.id, WORK_QUEUE_LABELS.TASK_READY);
+          return null;
+        }
+      }
+
       // Add claim comment
       await this.addComment(task.id, `Claimed by session ${sessionId} at ${claimedAt}`);
 
@@ -482,6 +511,11 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
   /**
    * Parse previous handoff from task comments.
    *
+   * Reads from br comments (not task.description) since recordHandoff()
+   * writes via addComment(). Falls back to description for backwards
+   * compatibility with existing beads that may have handoff text in
+   * the description field.
+   *
    * @param taskId - Bead ID of the task
    * @returns Parsed handoff context or null if no handoff found
    */
@@ -489,70 +523,97 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
     validateBeadId(taskId);
 
     try {
-      // Get task details with comments
-      const task = await this.queryBeadsJson<Bead>(`show ${shellEscape(taskId)} --json`);
-      if (!task || !task.description) {
-        return null;
-      }
+      // Primary: read comments (where recordHandoff() writes)
+      let handoffSource: string | null = null;
 
-      // Look for handoff marker in description/comments
-      const handoffMatch = task.description.match(
-        /--- SESSION HANDOFF ---[\s\S]*?--- END HANDOFF ---/,
+      const comments = await this.queryBeadsJson<Array<{ body: string }>>(
+        `comments list ${shellEscape(taskId)} --json`,
       );
+      if (comments && comments.length > 0) {
+        // Search comments in reverse (most recent first)
+        for (let i = comments.length - 1; i >= 0; i--) {
+          const body = comments[i].body ?? "";
+          if (body.includes("--- SESSION HANDOFF ---")) {
+            handoffSource = body;
+            break;
+          }
+        }
+      }
 
-      if (!handoffMatch) {
+      // Fallback: check description for backwards compatibility
+      if (!handoffSource) {
+        const task = await this.queryBeadsJson<Bead>(`show ${shellEscape(taskId)} --json`);
+        if (task?.description?.includes("--- SESSION HANDOFF ---")) {
+          handoffSource = task.description;
+        }
+      }
+
+      if (!handoffSource) {
         return null;
       }
 
-      const handoffText = handoffMatch[0];
-
-      // Parse handoff fields
-      const sessionMatch = handoffText.match(/Session: ([\w-]+)/);
-      const timestampMatch = handoffText.match(/Timestamp: ([\w\-:TZ]+)/);
-      const tokensMatch = handoffText.match(/Tokens used: (\d+)/);
-
-      // Parse files changed
-      const filesSection = handoffText.match(/Files changed:\n([\s\S]*?)\n\nCurrent state:/);
-      const filesChanged: string[] = [];
-      if (filesSection) {
-        const fileLines = filesSection[1].split("\n");
-        for (const line of fileLines) {
-          const match = line.match(/^\s+-\s+(.+)$/);
-          if (match && match[1] !== "(none)") {
-            filesChanged.push(match[1]);
-          }
-        }
-      }
-
-      // Parse current state
-      const stateSection = handoffText.match(/Current state:\n([\s\S]*?)\n\nNext steps:/);
-      const currentState = stateSection?.[1].trim() || "";
-
-      // Parse next steps
-      const stepsSection = handoffText.match(/Next steps:\n([\s\S]*?)--- END HANDOFF ---/);
-      const nextSteps: string[] = [];
-      if (stepsSection) {
-        const stepLines = stepsSection[1].split("\n");
-        for (const line of stepLines) {
-          const match = line.match(/^\s+\d+\.\s+(.+)$/);
-          if (match && match[1] !== "(none)") {
-            nextSteps.push(match[1]);
-          }
-        }
-      }
-
-      return {
-        sessionId: sessionMatch?.[1] || "unknown",
-        timestamp: timestampMatch?.[1],
-        tokensUsed: parseInt(tokensMatch?.[1] || "0", 10),
-        filesChanged,
-        currentState,
-        nextSteps,
-      };
+      return this.parseHandoffText(handoffSource);
     } catch (e) {
       this.logError(`Error parsing handoff for ${taskId}: ${e}`);
       return null;
     }
+  }
+
+  /**
+   * Parse structured handoff text into a SessionHandoff object.
+   */
+  private parseHandoffText(text: string): SessionHandoff | null {
+    const handoffMatch = text.match(/--- SESSION HANDOFF ---[\s\S]*?--- END HANDOFF ---/);
+
+    if (!handoffMatch) {
+      return null;
+    }
+
+    const handoffText = handoffMatch[0];
+
+    // Parse handoff fields
+    const sessionMatch = handoffText.match(/Session: ([\w-]+)/);
+    const timestampMatch = handoffText.match(/Timestamp: ([\w\-:TZ.]+)/);
+    const tokensMatch = handoffText.match(/Tokens used: (\d+)/);
+
+    // Parse files changed
+    const filesSection = handoffText.match(/Files changed:\n([\s\S]*?)\n\nCurrent state:/);
+    const filesChanged: string[] = [];
+    if (filesSection) {
+      const fileLines = filesSection[1].split("\n");
+      for (const line of fileLines) {
+        const match = line.match(/^\s+-\s+(.+)$/);
+        if (match && match[1] !== "(none)") {
+          filesChanged.push(match[1]);
+        }
+      }
+    }
+
+    // Parse current state
+    const stateSection = handoffText.match(/Current state:\n([\s\S]*?)\n\nNext steps:/);
+    const currentState = stateSection?.[1].trim() || "";
+
+    // Parse next steps
+    const stepsSection = handoffText.match(/Next steps:\n([\s\S]*?)--- END HANDOFF ---/);
+    const nextSteps: string[] = [];
+    if (stepsSection) {
+      const stepLines = stepsSection[1].split("\n");
+      for (const line of stepLines) {
+        const match = line.match(/^\s+\d+\.\s+(.+)$/);
+        if (match && match[1] !== "(none)") {
+          nextSteps.push(match[1]);
+        }
+      }
+    }
+
+    return {
+      sessionId: sessionMatch?.[1] || "unknown",
+      timestamp: timestampMatch?.[1],
+      tokensUsed: parseInt(tokensMatch?.[1] || "0", 10),
+      filesChanged,
+      currentState,
+      nextSteps,
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -565,30 +626,53 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
    * Uses the openclaw CLI to start a bounded session that processes
    * exactly one task.
    *
+   * SECURITY: Uses spawn() with argv array — no shell interpretation,
+   * no injection surface. Same pattern as Kubernetes kubelet exec.
+   * See: OWASP OS Command Injection Cheat Sheet, Option A.
+   *
    * @param claim - Task claim with sessionId
    */
   async triggerAgentSession(claim: TaskClaim): Promise<void> {
     const timeoutSeconds = Math.floor(this.config.sessionTimeoutMs / 1000);
 
-    // Build command for single-task agent session
-    // The actual command will depend on your agent infrastructure
+    // SECURITY: Validate agent command before execution
     const agentCommand = process.env.LOA_AGENT_COMMAND ?? "openclaw";
-    const command = `timeout ${timeoutSeconds}s ${agentCommand} agent run --mode single-task --task-id '${claim.taskId}' --session-id '${claim.sessionId}'`;
+    validateBrCommand(agentCommand);
 
-    this.log(`Triggering agent session: ${command}`);
+    // Validate claim inputs (defense-in-depth — already validated at claim time)
+    validateBeadId(claim.taskId);
+
+    this.log(
+      `Triggering agent session: timeout ${timeoutSeconds}s ${agentCommand} agent run --mode single-task --task-id ${claim.taskId}`,
+    );
 
     try {
-      // Spawn process with timeout
-      this.activeSession = spawn("sh", ["-c", command], {
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          LOA_SINGLE_TASK_MODE: "true",
-          LOA_TASK_ID: claim.taskId,
-          LOA_SESSION_ID: claim.sessionId,
-          LOA_SESSION_TIMEOUT: String(timeoutSeconds),
+      // SECURITY: spawn() with argv array — no shell interpretation, no injection surface
+      this.activeSession = spawn(
+        "timeout",
+        [
+          `${timeoutSeconds}s`,
+          agentCommand,
+          "agent",
+          "run",
+          "--mode",
+          "single-task",
+          "--task-id",
+          claim.taskId,
+          "--session-id",
+          claim.sessionId,
+        ],
+        {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            LOA_SINGLE_TASK_MODE: "true",
+            LOA_TASK_ID: claim.taskId,
+            LOA_SESSION_ID: claim.sessionId,
+            LOA_SESSION_TIMEOUT: String(timeoutSeconds),
+          },
         },
-      });
+      );
 
       // Wait for completion
       await new Promise<void>((resolve, reject) => {
@@ -708,6 +792,15 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
           }
 
           const claimTime = new Date(claimedAt).getTime();
+
+          // Guard against malformed timestamps: NaN comparison evaluates
+          // as false for <, meaning NaN elapsed would incorrectly bypass
+          // the "not stale yet" check and trigger false recovery.
+          if (isNaN(claimTime)) {
+            this.logError(`Task ${task.id}: invalid claim timestamp "${claimedAt}", skipping`);
+            continue;
+          }
+
           const elapsed = now - claimTime;
 
           if (elapsed < timeoutMs) {
@@ -753,24 +846,36 @@ ${context.nextSteps.length > 0 ? context.nextSteps.map((s, i) => `  ${i + 1}. ${
   /**
    * Parse claim timestamp from task comments.
    *
-   * Looks for "Claimed by session X at Y" pattern in comments.
+   * Reads from br comments (where claimNextTask() writes via addComment()).
+   * Falls back to task.description for backwards compatibility.
    *
    * @param taskId - Bead ID of the task
    * @returns ISO timestamp string or null if not found
    */
   private async parseClaimTimestamp(taskId: string): Promise<string | null> {
     try {
-      const task = await this.queryBeadsJson<Bead>(`show ${shellEscape(taskId)} --json`);
-
-      if (!task?.description) {
-        return null;
+      // Primary: search comments (where claimNextTask writes)
+      const comments = await this.queryBeadsJson<Array<{ body: string }>>(
+        `comments list ${shellEscape(taskId)} --json`,
+      );
+      if (comments && comments.length > 0) {
+        // Search comments in reverse (most recent claim first)
+        for (let i = comments.length - 1; i >= 0; i--) {
+          const body = comments[i].body ?? "";
+          const claimMatch = body.match(/Claimed by session [\w-]+ at ([\w\-:TZ.]+)/);
+          if (claimMatch) {
+            return claimMatch[1];
+          }
+        }
       }
 
-      // Look for claim comment pattern
-      const claimMatch = task.description.match(/Claimed by session [\w-]+ at ([\w\-:TZ.]+)/);
-
-      if (claimMatch) {
-        return claimMatch[1];
+      // Fallback: check description for backwards compatibility
+      const task = await this.queryBeadsJson<Bead>(`show ${shellEscape(taskId)} --json`);
+      if (task?.description) {
+        const claimMatch = task.description.match(/Claimed by session [\w-]+ at ([\w\-:TZ.]+)/);
+        if (claimMatch) {
+          return claimMatch[1];
+        }
       }
 
       return null;
@@ -879,9 +984,20 @@ Action: Task returned to ready queue
     console.log(`[beads-work-queue] ${message}`);
   }
 
+  /**
+   * Log errors unconditionally.
+   *
+   * Errors are NEVER gated on verbose — silent failures in production
+   * make debugging impossible. Same pattern as Netflix Zuul: debug
+   * messages gated on level, errors always emitted.
+   */
   private logError(message: string): void {
+    console.error(`[beads-work-queue] ${message}`);
+  }
+
+  private logDebug(message: string): void {
     if (this.verbose) {
-      console.error(`[beads-work-queue] ${message}`);
+      console.log(`[beads-work-queue] DEBUG: ${message}`);
     }
   }
 }
