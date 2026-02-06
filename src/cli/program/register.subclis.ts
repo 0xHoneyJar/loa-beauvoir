@@ -200,6 +200,14 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "identity-links",
+    description: "Cross-provider identity link management",
+    register: async (program) => {
+      const mod = await import("../identity-links-cli.js");
+      mod.registerIdentityLinksCli(program);
+    },
+  },
+  {
     name: "directory",
     description: "Directory commands",
     register: async (program) => {

@@ -172,7 +172,7 @@ export function buildAgentPeerSessionKey(params: {
   return `agent:${normalizeAgentId(params.agentId)}:${channel}:${peerKind}:${peerId}`;
 }
 
-function resolveLinkedPeerId(params: {
+export function resolveLinkedPeerId(params: {
   identityLinks?: Record<string, string[]>;
   channel: string;
   peerId: string;
