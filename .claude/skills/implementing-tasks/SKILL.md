@@ -515,6 +515,91 @@ status=$(echo "$health" | jq -r '.status')
 
 See `.claude/protocols/beads-preflight.md` for full specification.
 
+## Phase -1.5: Single-Task Mode (if --single-task flag)
+
+When the `--single-task` flag is provided, the agent operates in **bounded session mode**:
+
+### Check for Single-Task Flag
+
+```bash
+# Detect single-task mode from arguments
+SINGLE_TASK_MODE="${ARGUMENTS_single_task:-false}"
+```
+
+### If Single-Task Mode Enabled
+
+1. **Initialize Work Queue**:
+
+   ```typescript
+   import { createBeadsWorkQueue, createBeadsRunStateManager } from "deploy/loa-identity/beads";
+
+   const runStateManager = createBeadsRunStateManager(config, { executor });
+   const workQueue = createBeadsWorkQueue({ enabled: true }, runStateManager, { executor });
+   ```
+
+2. **Claim Next Ready Task**:
+
+   ```typescript
+   const claim = await workQueue.claimNextTask();
+   if (!claim) {
+     console.log("[single-task] No ready tasks available");
+     return;
+   }
+   console.log(`[single-task] Claimed task ${claim.taskId} (priority: ${claim.priority})`);
+   ```
+
+3. **Check for Previous Handoff** (session continuation):
+
+   ```typescript
+   const previousHandoff = await workQueue.getPreviousHandoff(claim.taskId);
+   if (previousHandoff) {
+     console.log(`[single-task] Resuming from session ${previousHandoff.sessionId}`);
+     // Load context: filesChanged, currentState, nextSteps
+   }
+   ```
+
+4. **Execute Single Task** within bounded window (30 minutes default):
+   - Work ONLY on the claimed task
+   - Track files modified, progress made
+   - Monitor token usage for handoff context
+
+5. **Record Handoff Before Session End**:
+
+   ```typescript
+   await workQueue.recordHandoff(claim.taskId, {
+     sessionId: claim.sessionId,
+     filesChanged: ["src/foo.ts", "src/bar.ts"],
+     currentState: "Implemented core logic, tests passing",
+     nextSteps: ["Add error handling", "Update documentation"],
+     tokensUsed: 15000,
+   });
+   ```
+
+6. **Release Task with Status**:
+
+   ```typescript
+   // If fully completed:
+   await workQueue.releaseTask(claim.taskId, "done");
+
+   // If blocked on external dependency:
+   await workQueue.releaseTask(claim.taskId, "blocked", "Waiting for API access");
+   ```
+
+### Label State Machine
+
+```
+TASK_READY → (claimNextTask) → TASK_IN_PROGRESS + session:<uuid>
+    → (releaseTask done) → TASK_DONE + close
+    → (releaseTask blocked) → TASK_BLOCKED + handoff:<session>
+```
+
+### Exit After Single Task
+
+In single-task mode, the agent exits after processing ONE task (not the entire sprint).
+The scheduler or `/run sprint-plan` will invoke subsequent sessions for remaining tasks.
+
+**Skip to Phase 3** (Documentation) after single-task completion.
+
 ## Phase -1: Context Assessment & Parallel Task Splitting (CRITICAL—DO THIS FIRST)
 
 Assess context size to determine if parallel splitting is needed:
