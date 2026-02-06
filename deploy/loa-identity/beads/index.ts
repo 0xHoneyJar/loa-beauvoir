@@ -58,6 +58,7 @@ export {
   createBeadsPersistenceService,
   createDefaultBeadsConfig,
   type BeadsPersistenceConfig,
+  type BeadsPersistenceOpts,
   type BeadsPersistenceStatus,
 } from "./beads-persistence-service.js";
 

@@ -7,6 +7,7 @@
  * @module beads-persistence-service
  */
 
+import type { IBeadsRunStateManager } from "../../../.claude/lib/beads";
 import type { Scheduler } from "../scheduler/scheduler.js";
 import type { SegmentedWALManager } from "../wal/wal-manager.js";
 import {
@@ -14,8 +15,25 @@ import {
   createBeadsRecoveryHandler,
   type RecoveryResult,
 } from "./beads-recovery.js";
-import { registerBeadsSchedulerTasks, type BeadsSchedulerConfig } from "./beads-scheduler-tasks.js";
+import {
+  registerBeadsSchedulerTasks,
+  registerWorkQueueTask,
+  type BeadsSchedulerConfig,
+} from "./beads-scheduler-tasks.js";
 import { BeadsWALAdapter, createBeadsWALAdapter, type BeadOperation } from "./beads-wal-adapter.js";
+import { createBeadsWorkQueue } from "./beads-work-queue.js";
+
+/**
+ * Options for BeadsPersistenceService constructor
+ */
+export interface BeadsPersistenceOpts {
+  /** WALManager for crash recovery */
+  wal?: SegmentedWALManager;
+  /** Scheduler for maintenance tasks */
+  scheduler?: Scheduler;
+  /** Run state manager (required when workQueue is enabled) */
+  runStateManager?: IBeadsRunStateManager;
+}
 
 /**
  * Configuration for BeadsPersistenceService
@@ -79,12 +97,20 @@ export class BeadsPersistenceService {
    * Create a new BeadsPersistenceService
    *
    * @param config - Service configuration
-   * @param wal - Optional WALManager for crash recovery
-   * @param scheduler - Optional Scheduler for maintenance tasks
+   * @param opts - Optional dependencies (wal, scheduler, runStateManager)
    */
-  constructor(config: BeadsPersistenceConfig, wal?: SegmentedWALManager, scheduler?: Scheduler) {
+  constructor(config: BeadsPersistenceConfig, opts?: BeadsPersistenceOpts) {
     this.config = config;
+    const { wal, scheduler, runStateManager } = opts ?? {};
     this.scheduler = scheduler;
+
+    // Fail-fast: workQueue enabled but no runStateManager
+    if (config.scheduler?.workQueue?.enabled && !runStateManager) {
+      throw new Error(
+        "[beads-persistence] workQueue.enabled=true requires a runStateManager. " +
+          "Pass createBeadsRunStateManager() or disable workQueue.",
+      );
+    }
 
     if (!config.enabled) {
       console.log("[beads-persistence] Disabled by configuration");
@@ -111,11 +137,30 @@ export class BeadsPersistenceService {
 
     // Register scheduler tasks if scheduler provided
     if (scheduler) {
-      registerBeadsSchedulerTasks(scheduler, {
+      // Single normalized config — passed to both maintenance tasks and work queue
+      const schedulerConfig = {
         ...config.scheduler,
         beadsDir: config.beadsDir,
         brCommand: config.brCommand,
-      });
+      };
+
+      registerBeadsSchedulerTasks(scheduler, schedulerConfig);
+
+      // Register work queue if enabled (runStateManager guaranteed present by guard above)
+      if (config.scheduler?.workQueue?.enabled && runStateManager) {
+        const workQueue = createBeadsWorkQueue(
+          {
+            enabled: true,
+            intervalMs: config.scheduler.workQueue.intervalMs,
+            jitterMs: config.scheduler.workQueue.jitterMs,
+            sessionTimeoutMs: config.scheduler.workQueue.sessionTimeoutMs,
+          },
+          runStateManager,
+          { brCommand: config.brCommand },
+        );
+        registerWorkQueueTask(scheduler, workQueue, schedulerConfig);
+        console.log("[beads-persistence] Work queue registered");
+      }
     } else {
       console.log("[beads-persistence] Scheduler not provided, running without maintenance tasks");
     }
@@ -295,10 +340,9 @@ export class BeadsPersistenceService {
  */
 export function createBeadsPersistenceService(
   config: BeadsPersistenceConfig,
-  wal?: SegmentedWALManager,
-  scheduler?: Scheduler,
+  opts?: BeadsPersistenceOpts,
 ): BeadsPersistenceService {
-  return new BeadsPersistenceService(config, wal, scheduler);
+  return new BeadsPersistenceService(config, opts);
 }
 
 /**
