@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import {
   identityLinksAddCommand,
   identityLinksListCommand,
@@ -62,9 +62,13 @@ export function registerIdentityLinksCli(program: Command) {
     .description("Resolve a channel:peerId to its canonical identity and session key")
     .argument("<channel>", "Channel name (e.g. telegram, discord)")
     .argument("<peerId>", "Peer ID within the channel")
-    .option(
-      "--dm-scope <scope>",
-      "DM scope override (main|per-peer|per-channel-peer|per-account-channel-peer)",
+    .addOption(
+      new Option("--dm-scope <scope>", "DM scope override").choices([
+        "main",
+        "per-peer",
+        "per-channel-peer",
+        "per-account-channel-peer",
+      ]),
     )
     .option("--json", "Output JSON", false)
     .action(async (channel: string, peerId: string, opts) => {

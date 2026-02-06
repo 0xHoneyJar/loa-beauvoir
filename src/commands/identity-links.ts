@@ -9,10 +9,22 @@ import { requireValidConfig } from "./agents.command-shared.js";
 // ---------------------------------------------------------------------------
 
 const PROVIDER_ID_RE = /^[a-zA-Z0-9_-]+:.+$/;
+const CANONICAL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
+const VALID_DM_SCOPES = new Set([
+  "main",
+  "per-peer",
+  "per-channel-peer",
+  "per-account-channel-peer",
+]);
 
 /** Validate `provider:id` format (e.g. `telegram:123456`, `discord:abc`). */
 export function isValidProviderIdFormat(value: string): boolean {
   return PROVIDER_ID_RE.test(value);
+}
+
+/** Validate canonical identity name (alphanumeric, hyphens, underscores, 1-64 chars). */
+export function isValidCanonicalName(value: string): boolean {
+  return CANONICAL_NAME_RE.test(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +83,14 @@ export async function identityLinksAddCommand(
     return;
   }
 
+  if (!isValidCanonicalName(canonical)) {
+    runtime.error(
+      `Invalid canonical name: "${canonical}". Must be 1-64 alphanumeric characters, hyphens, or underscores.`,
+    );
+    runtime.exit(1);
+    return;
+  }
+
   if (!isValidProviderIdFormat(providerId)) {
     runtime.error(
       `Invalid provider ID format: "${providerId}". Expected provider:id (e.g. telegram:123456).`,
@@ -90,12 +110,24 @@ export async function identityLinksAddCommand(
   const links: Record<string, string[]> = { ...(config.session?.identityLinks ?? {}) };
   const existing = links[canonical] ?? [];
 
-  // Case-insensitive duplicate check
+  // Case-insensitive duplicate check (same canonical)
   const normalizedNew = providerId.toLowerCase();
   if (existing.some((id) => id.toLowerCase() === normalizedNew)) {
     runtime.error(`"${providerId}" already linked to "${canonical}".`);
     runtime.exit(1);
     return;
+  }
+
+  // Cross-canonical duplicate check: provider ID must not exist under any other canonical
+  for (const [otherCanonical, otherIds] of Object.entries(links)) {
+    if (otherCanonical === canonical) continue;
+    if (otherIds.some((id) => id.toLowerCase() === normalizedNew)) {
+      runtime.error(
+        `"${providerId}" is already linked to "${otherCanonical}". Remove it first before linking to "${canonical}".`,
+      );
+      runtime.exit(1);
+      return;
+    }
   }
 
   links[canonical] = [...existing, providerId];
@@ -212,6 +244,14 @@ export async function identityLinksResolveCommand(
 ): Promise<void> {
   const config = await requireValidConfig(runtime);
   if (!config) return;
+
+  if (opts.dmScope && !VALID_DM_SCOPES.has(opts.dmScope)) {
+    runtime.error(
+      `Invalid DM scope: "${opts.dmScope}". Must be one of: ${[...VALID_DM_SCOPES].join(", ")}`,
+    );
+    runtime.exit(1);
+    return;
+  }
 
   const identityLinks = config.session?.identityLinks;
   const dmScope = (opts.dmScope ?? config.session?.dmScope ?? "main") as

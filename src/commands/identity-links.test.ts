@@ -24,6 +24,7 @@ import {
   identityLinksListCommand,
   identityLinksRemoveCommand,
   identityLinksResolveCommand,
+  isValidCanonicalName,
   isValidProviderIdFormat,
 } from "./identity-links.js";
 
@@ -74,6 +75,41 @@ describe("isValidProviderIdFormat", () => {
 
   it("rejects provider with empty id part", () => {
     expect(isValidProviderIdFormat("telegram:")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isValidCanonicalName
+// ---------------------------------------------------------------------------
+
+describe("isValidCanonicalName", () => {
+  it("accepts valid canonical names", () => {
+    expect(isValidCanonicalName("alice")).toBe(true);
+    expect(isValidCanonicalName("bob-smith")).toBe(true);
+    expect(isValidCanonicalName("user_123")).toBe(true);
+    expect(isValidCanonicalName("A")).toBe(true);
+    expect(isValidCanonicalName("CamelCase")).toBe(true);
+  });
+
+  it("rejects names starting with hyphen or underscore", () => {
+    expect(isValidCanonicalName("-alice")).toBe(false);
+    expect(isValidCanonicalName("_alice")).toBe(false);
+  });
+
+  it("rejects names with invalid characters", () => {
+    expect(isValidCanonicalName("alice bob")).toBe(false);
+    expect(isValidCanonicalName("alice.bob")).toBe(false);
+    expect(isValidCanonicalName("alice@bob")).toBe(false);
+    expect(isValidCanonicalName("alice/bob")).toBe(false);
+  });
+
+  it("rejects empty string", () => {
+    expect(isValidCanonicalName("")).toBe(false);
+  });
+
+  it("rejects names exceeding 64 characters", () => {
+    expect(isValidCanonicalName("a".repeat(64))).toBe(true);
+    expect(isValidCanonicalName("a".repeat(65))).toBe(false);
   });
 });
 
@@ -195,6 +231,46 @@ describe("identityLinksAddCommand", () => {
     await identityLinksAddCommand("  ", "telegram:123", {}, runtime);
 
     expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("must not be empty"));
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects invalid canonical name format", async () => {
+    await identityLinksAddCommand("alice bob", "telegram:123", {}, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Invalid canonical name"));
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects provider ID already linked to a different canonical", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        session: { identityLinks: { alice: ["telegram:123"] } },
+      },
+    });
+
+    await identityLinksAddCommand("bob", "telegram:123", {}, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      expect.stringContaining('already linked to "alice"'),
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(configMocks.writeConfigFile).not.toHaveBeenCalled();
+  });
+
+  it("cross-canonical duplicate check is case-insensitive", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        session: { identityLinks: { alice: ["Telegram:123"] } },
+      },
+    });
+
+    await identityLinksAddCommand("bob", "telegram:123", {}, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      expect.stringContaining('already linked to "alice"'),
+    );
     expect(runtime.exit).toHaveBeenCalledWith(1);
   });
 
@@ -437,6 +513,20 @@ describe("identityLinksResolveCommand", () => {
     expect(parsed.peerId).toBe("123");
     expect(parsed.resolvedCanonical).toBe("alice");
     expect(parsed.sessionKey).toBeDefined();
+  });
+
+  it("rejects invalid dmScope", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        session: { identityLinks: { alice: ["telegram:123"] } },
+      },
+    });
+
+    await identityLinksResolveCommand("telegram", "123", { dmScope: "invalid-scope" }, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Invalid DM scope"));
+    expect(runtime.exit).toHaveBeenCalledWith(1);
   });
 
   it("resolves without identity links configured", async () => {
