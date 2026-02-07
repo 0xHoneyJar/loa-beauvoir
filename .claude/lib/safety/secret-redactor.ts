@@ -25,6 +25,11 @@ const SENSITIVE_HEADERS = new Set([
 // Built-in secret patterns ordered most-specific-first
 const BUILTIN_PATTERNS: RedactionPattern[] = [
   {
+    name: "github_fine_grained_pat",
+    pattern: /github_pat_[A-Za-z0-9_]{22,}/g,
+    replacement: "[REDACTED:github_fine_grained_pat]",
+  },
+  {
     name: "github_pat",
     pattern: /ghp_[A-Za-z0-9]{36}/g,
     replacement: "[REDACTED:github_pat]",
@@ -125,6 +130,25 @@ export class SecretRedactor {
       return value.map((item) => this.redactAny(item, depth + 1, seen));
     }
 
+    // Handle Map instances — redact values, preserve structure
+    if (value instanceof Map) {
+      const result = new Map();
+      for (const [key, val] of value) {
+        const redactedKey = typeof key === "string" ? this.redact(key) : key;
+        result.set(redactedKey, this.redactAny(val, depth + 1, seen));
+      }
+      return result;
+    }
+
+    // Handle Set instances — redact each element
+    if (value instanceof Set) {
+      const result = new Set();
+      for (const item of value) {
+        result.add(this.redactAny(item, depth + 1, seen));
+      }
+      return result;
+    }
+
     // Handle plain objects
     if (typeof value === "object" && value.constructor === Object) {
       const result: Record<string, unknown> = {};
@@ -139,7 +163,21 @@ export class SecretRedactor {
       return result;
     }
 
-    // Pass through other object types unchanged
+    // Fallback for non-plain objects (class instances, URL, Headers, etc.)
+    // Walk enumerable own properties to catch secrets in response objects
+    if (typeof value === "object") {
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value)) {
+        const lowerKey = key.toLowerCase();
+        if (SENSITIVE_HEADERS.has(lowerKey)) {
+          result[key] = "[REDACTED:header]";
+        } else {
+          result[key] = this.redactAny(val, depth + 1, seen);
+        }
+      }
+      return result;
+    }
+
     return value;
   }
 

@@ -12,16 +12,20 @@
  * SDD ref: §5.1 — Workflow Engine Integration (TASK-3.6)
  */
 
+import type { OperatingMode } from "../boot/orchestrator.js";
 import type { CircuitBreaker } from "../persistence/circuit-breaker.js";
 import type { RateLimiter, ConsumeResult } from "../persistence/rate-limiter.js";
 import type { AuditTrail } from "../safety/audit-trail.js";
 import { PersistenceError } from "../persistence/types.js";
+import {
+  IdempotencyIndex as IdempotencyIndexClass,
+  type IdempotencyIndexApi,
+  type DedupEntry,
+  type CompensationStrategy,
+} from "../safety/idempotency-index.js";
 
-// ── Types ────────────────────────────────────────────────────
-
-export type OperatingMode = "autonomous" | "degraded" | "dev";
-
-export type CompensationStrategy = "safe_retry" | "check_then_retry" | "skip";
+// ── Re-exports for backwards compat ─────────────────────────
+export type { IdempotencyIndexApi, DedupEntry, CompensationStrategy, OperatingMode };
 
 export interface StepDef {
   id: string;
@@ -39,27 +43,12 @@ export interface StepResult {
   previousError?: string;
 }
 
-export interface DedupEntry {
-  key: string;
-  intentSeq: number;
-  status: "pending" | "completed" | "failed";
-  strategy: CompensationStrategy;
-  error?: string;
-}
-
-export interface IdempotencyIndex {
-  check(key: string): Promise<DedupEntry | null>;
-  markPending(key: string, intentSeq: number, strategy: CompensationStrategy): Promise<void>;
-  markCompleted(key: string): Promise<void>;
-  markFailed(key: string, error: string): Promise<void>;
-}
-
 export interface HardenedExecutorConfig {
   /** Optional in dev mode where P0 audit trail init may have failed. */
   auditTrail?: AuditTrail;
   circuitBreaker?: CircuitBreaker;
   rateLimiter?: RateLimiter;
-  dedupIndex?: IdempotencyIndex;
+  dedupIndex?: IdempotencyIndexApi;
   operatingMode: OperatingMode;
 }
 
@@ -96,9 +85,9 @@ export function getStrategy(action: string): CompensationStrategy {
   return COMPENSATION_TABLE[action] ?? "skip";
 }
 
-/** Generate a dedup key from step attributes. */
+/** Generate a dedup key from step attributes using IdempotencyIndex.generateKey for compatibility. */
 export function generateDedupKey(step: StepDef): string {
-  return `${step.skill}:${step.scope}/${step.resource}:${step.id}`;
+  return IdempotencyIndexClass.generateKey(step.skill, step.scope, step.resource, step.input ?? {});
 }
 
 // ── Hardened Executor ────────────────────────────────────────
@@ -141,7 +130,12 @@ export class HardenedExecutor {
           return { outputs: {}, status: "skipped", deduped: true };
         }
         if (existing.status === "failed") {
-          return { outputs: {}, status: "skipped", deduped: true, previousError: existing.error };
+          return {
+            outputs: {},
+            status: "skipped",
+            deduped: true,
+            previousError: existing.lastError,
+          };
         }
       }
     }

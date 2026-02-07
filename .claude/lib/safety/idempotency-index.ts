@@ -46,6 +46,17 @@ export interface IdempotencyIndexConfig {
   now?: () => number;
 }
 
+/**
+ * Interface for IdempotencyIndex consumers (e.g. HardenedExecutor).
+ * Allows type-safe usage without coupling to the concrete class.
+ */
+export interface IdempotencyIndexApi {
+  check(key: string): Promise<DedupEntry | null>;
+  markPending(key: string, intentSeq: number, strategy: CompensationStrategy): Promise<DedupEntry>;
+  markCompleted(key: string): Promise<DedupEntry>;
+  markFailed(key: string, error: string): Promise<DedupEntry>;
+}
+
 // -- Constants ---------------------------------------------------
 
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -106,6 +117,13 @@ export class IdempotencyIndex {
     strategy: CompensationStrategy,
   ): Promise<DedupEntry> {
     const state = await this.ensureLoaded();
+
+    // Guard: never overwrite a completed or failed (terminal) entry
+    const existing = state.entries[key];
+    if (existing && (existing.status === "completed" || existing.status === "failed")) {
+      return existing;
+    }
+
     const entry: DedupEntry = {
       key,
       status: "pending",

@@ -12,7 +12,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import type { DedupState } from "../../safety/idempotency-index.js";
 import type { StepDef } from "../../workflow/hardened-executor.js";
 import { IdempotencyIndex } from "../../safety/idempotency-index.js";
-import { HardenedExecutor } from "../../workflow/hardened-executor.js";
+import { HardenedExecutor, generateDedupKey } from "../../workflow/hardened-executor.js";
 import { boot } from "../orchestrator.js";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -109,7 +109,7 @@ describe("Boot -> Workflow -> Audit Integration", () => {
     expect(verification.recordCount).toBe(2);
 
     // 7. Verify dedup index shows completed
-    const dedupKey = `create_pull_request:test-owner/test-repo/pulls:step-1`;
+    const dedupKey = generateDedupKey(step);
     const entry = await dedupIndex.check(dedupKey);
     expect(entry).not.toBeNull();
     expect(entry!.status).toBe("completed");

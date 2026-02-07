@@ -70,13 +70,20 @@ function parseEnvelope(raw: string, maxVersion: number): Envelope | null {
   }
 }
 
-/** fsync a directory to ensure rename durability. */
+/** fsync a directory to ensure rename durability. Tolerates EINVAL/ENOTSUP on overlayfs/NFS. */
 async function fsyncDir(dirPath: string): Promise<void> {
-  const fd = await fs.promises.open(dirPath, "r");
+  let fd: fs.promises.FileHandle | undefined;
   try {
+    fd = await fs.promises.open(dirPath, "r");
     await fd.sync();
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // EINVAL and ENOTSUP are expected on overlayfs, tmpfs, NFS, and some CI environments
+    if (code !== "EINVAL" && code !== "ENOTSUP") {
+      throw err;
+    }
   } finally {
-    await fd.close();
+    await fd?.close();
   }
 }
 
@@ -137,23 +144,40 @@ export class ResilientJsonStore<T> implements ResilientStore<T> {
   }
 
   async get(): Promise<T | null> {
-    const result = await this.readFallbackChain();
-    if (result === null) return null;
+    // Acquire mutex to protect side-effecting operations in readFallbackChain
+    // (quarantine, stale tmp cleanup) from racing with concurrent set() calls.
+    await this.mutex.acquire();
+    try {
+      const result = await this.readFallbackChain();
+      if (result === null) return null;
 
-    let { envelope } = result;
-    if (envelope._schemaVersion < this.schemaVersion) {
-      envelope = this.runMigrations(envelope);
-      try {
-        await this.set(this.extractState(envelope) as T);
-      } catch (err) {
-        this.logger.warn("Failed to write back migrated state", err);
+      let { envelope } = result;
+      if (envelope._schemaVersion < this.schemaVersion) {
+        envelope = this.runMigrations(envelope);
+        // Release mutex before calling set() which will re-acquire it
+        this.mutex.release();
+        try {
+          await this.set(this.extractState(envelope) as T);
+        } catch (err) {
+          this.logger.warn("Failed to write back migrated state", err);
+        }
+        // Re-acquire is not needed since we return below
+        if (envelope._writeEpoch > this.writeEpoch) {
+          this.writeEpoch = envelope._writeEpoch;
+        }
+        return this.extractState(envelope) as T;
+      }
+
+      if (envelope._writeEpoch > this.writeEpoch) {
+        this.writeEpoch = envelope._writeEpoch;
+      }
+      return this.extractState(envelope) as T;
+    } finally {
+      // Release only if still held (migration path releases early)
+      if (this.mutex.isHeld()) {
+        this.mutex.release();
       }
     }
-
-    if (envelope._writeEpoch > this.writeEpoch) {
-      this.writeEpoch = envelope._writeEpoch;
-    }
-    return this.extractState(envelope) as T;
   }
 
   async set(state: T): Promise<void> {
@@ -339,7 +363,8 @@ export class ResilientJsonStore<T> implements ResilientStore<T> {
     for (const f of candidates) {
       try {
         await fs.promises.access(f);
-        const dest = `${this.storePath}.quarantine.${ts}`;
+        // Include basename to avoid overwriting when multiple files are quarantined
+        const dest = `${this.storePath}.quarantine.${ts}.${path.basename(f)}`;
         await fs.promises.rename(f, dest);
         this.logger.warn(`Quarantined corrupt file: ${path.basename(f)} -> ${path.basename(dest)}`);
       } catch {
@@ -373,6 +398,10 @@ export class ResilientStoreFactory {
   }
 
   create<T>(name: string, config: Omit<StoreConfig<T>, "path" | "logger">): ResilientJsonStore<T> {
+    // Validate store name to prevent path traversal (consistent with LockManager)
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+      throw new Error(`Store name must match /^[a-zA-Z0-9_-]+$/: "${name}"`);
+    }
     return new ResilientJsonStore<T>({
       ...config,
       path: path.join(this.baseDir, `${name}.json`),

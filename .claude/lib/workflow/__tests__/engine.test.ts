@@ -14,7 +14,7 @@ import {
   type StepDef,
   type HardenedExecutorConfig,
   type StepExecutor,
-  type IdempotencyIndex,
+  type IdempotencyIndexApi,
 } from "../hardened-executor.js";
 
 // ── Mock Factories ───────────────────────────────────────────
@@ -27,7 +27,7 @@ function createMockAuditTrail() {
   };
 }
 
-function createMockDedupIndex(): IdempotencyIndex & {
+function createMockDedupIndex(): IdempotencyIndexApi & {
   check: ReturnType<typeof vi.fn>;
   markPending: ReturnType<typeof vi.fn>;
   markCompleted: ReturnType<typeof vi.fn>;
@@ -148,7 +148,9 @@ describe("HardenedExecutor", () => {
       key: "test-key",
       intentSeq: 42,
       status: "completed",
-      strategy: "check_then_retry",
+      compensationStrategy: "check_then_retry",
+      createdAt: new Date().toISOString(),
+      attempts: 1,
     });
 
     const engine = createEngine();
@@ -166,8 +168,10 @@ describe("HardenedExecutor", () => {
       key: "test-key",
       intentSeq: 42,
       status: "failed",
-      strategy: "check_then_retry",
-      error: "Previous attempt failed: 422 Unprocessable Entity",
+      compensationStrategy: "check_then_retry",
+      createdAt: new Date().toISOString(),
+      attempts: 1,
+      lastError: "Previous attempt failed: 422 Unprocessable Entity",
     });
 
     const engine = createEngine();
@@ -319,9 +323,22 @@ describe("getStrategy", () => {
 });
 
 describe("generateDedupKey", () => {
-  it("creates a deterministic key from step attributes", () => {
+  it("creates a deterministic key from step attributes using IdempotencyIndex format", () => {
     const step = makeStep();
     const key = generateDedupKey(step);
-    expect(key).toBe("create_pull_request:owner/repo/pulls/123:step-1");
+    // Format: {action}:{scope}/{resource}:{hash16}
+    expect(key).toMatch(/^create_pull_request:owner\/repo\/pulls\/123:[0-9a-f]{16}$/);
+  });
+
+  it("produces same key for same inputs", () => {
+    const step1 = makeStep();
+    const step2 = makeStep();
+    expect(generateDedupKey(step1)).toBe(generateDedupKey(step2));
+  });
+
+  it("produces different key for different inputs", () => {
+    const step1 = makeStep({ input: { title: "Fix bug" } });
+    const step2 = makeStep({ input: { title: "Add feature" } });
+    expect(generateDedupKey(step1)).not.toBe(generateDedupKey(step2));
   });
 });

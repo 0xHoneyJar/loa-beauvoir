@@ -70,10 +70,21 @@ export class LockManager {
     }
   }
 
-  /** Release a named lock by unlinking its lock file. */
+  /** Release a named lock by unlinking its lock file. Verifies ownership (PID + bootId). */
   async release(name: string): Promise<void> {
     const lockPath = this.lockFilePath(name);
     try {
+      // Verify ownership before releasing to prevent accidental cross-process release
+      const ownership = await this.readOwnership(lockPath);
+      if (ownership && (ownership.pid !== process.pid || ownership.bootId !== this.bootId)) {
+        this.logger.warn(`Lock release denied: ${name} not owned by this process`, {
+          ownerPid: ownership.pid,
+          ownerBootId: ownership.bootId,
+          ourPid: process.pid,
+          ourBootId: this.bootId,
+        });
+        return;
+      }
       await unlink(lockPath);
       this.logger.info(`Lock released: ${name}`);
     } catch (err: unknown) {

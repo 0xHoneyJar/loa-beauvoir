@@ -15,6 +15,7 @@
 
 import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
+import type { IdempotencyIndexApi } from "../safety/idempotency-index.js";
 import { CircuitBreaker } from "../persistence/circuit-breaker.js";
 import { LockManager } from "../persistence/lock-manager.js";
 import { RateLimiter } from "../persistence/rate-limiter.js";
@@ -66,7 +67,7 @@ export interface ServicesBag {
   store?: ResilientStoreFactory;
   circuitBreaker?: CircuitBreaker;
   rateLimiter?: RateLimiter;
-  dedupIndex?: unknown;
+  dedupIndex?: IdempotencyIndexApi;
   toolValidator?: ToolValidator;
   /** May be undefined in dev mode if P0 lock manager init failed. */
   lockManager?: LockManager;
@@ -97,7 +98,7 @@ export interface BootFactories {
     logger: BeauvoirLogger;
     now?: () => number;
   }) => LockManager;
-  createDedupIndex?: () => unknown;
+  createDedupIndex?: () => IdempotencyIndexApi | null;
   createToolValidator?: (registry: never[], policy: ActionPolicyDef) => ToolValidator;
   checkDataDir?: (dataDir: string) => Promise<void>;
 }
@@ -116,7 +117,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
   let storeFactory: ResilientStoreFactory | undefined;
   let circuitBreaker: CircuitBreaker | undefined;
   let rateLimiter: RateLimiter | undefined;
-  let dedupIndex: unknown | undefined;
+  let dedupIndex: IdempotencyIndexApi | undefined;
   let toolValidator: ToolValidator | undefined;
   let lockManager: LockManager | undefined;
 
@@ -400,13 +401,37 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     lockManager,
   };
 
+  const SHUTDOWN_TIMEOUT_MS = 5000;
   const shutdown = async (): Promise<void> => {
-    if (rateLimiter) {
-      rateLimiter.shutdown();
-    }
-    if (auditTrail) {
-      await auditTrail.close();
-    }
+    const shutdownWork = async () => {
+      // Each step wrapped in try/catch so one failure doesn't block the next
+      if (rateLimiter) {
+        try {
+          rateLimiter.shutdown();
+        } catch (err) {
+          logger?.warn("RateLimiter shutdown failed: " + errorMessage(err));
+        }
+      }
+      if (auditTrail) {
+        try {
+          await auditTrail.close();
+        } catch (err) {
+          logger?.warn("AuditTrail close failed: " + errorMessage(err));
+        }
+      }
+    };
+
+    // Race shutdown against a timeout to prevent indefinite hang
+    await Promise.race([
+      shutdownWork(),
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          logger?.warn("Shutdown timed out after " + SHUTDOWN_TIMEOUT_MS + "ms");
+          resolve();
+        }, SHUTDOWN_TIMEOUT_MS);
+        timer.unref();
+      }),
+    ]);
   };
 
   return { health, services, shutdown };

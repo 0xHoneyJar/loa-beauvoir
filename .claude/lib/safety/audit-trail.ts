@@ -471,28 +471,36 @@ export class AuditTrail {
    */
   async close(): Promise<void> {
     if (this.closed) return;
-    this.closed = true;
 
-    // Clear batch timer
-    if (this.batchFsyncTimer) {
-      clearTimeout(this.batchFsyncTimer);
-      this.batchFsyncTimer = null;
-    }
+    // Acquire mutex to wait for any in-flight appendRecord to complete
+    await this.mutex.acquire();
+    try {
+      if (this.closed) return; // re-check after acquiring
+      this.closed = true;
 
-    // Flush any pending batched fsync
-    if (this.batchFsyncPending && this.fd) {
-      try {
-        await this.fd.sync();
-      } catch {
-        // Best-effort on close
+      // Clear batch timer
+      if (this.batchFsyncTimer) {
+        clearTimeout(this.batchFsyncTimer);
+        this.batchFsyncTimer = null;
       }
-      this.batchFsyncPending = false;
-    }
 
-    // Close fd
-    if (this.fd) {
-      await this.fd.close();
-      this.fd = null;
+      // Flush any pending batched fsync
+      if (this.batchFsyncPending && this.fd) {
+        try {
+          await this.fd.sync();
+        } catch {
+          // Best-effort on close
+        }
+        this.batchFsyncPending = false;
+      }
+
+      // Close fd
+      if (this.fd) {
+        await this.fd.close();
+        this.fd = null;
+      }
+    } finally {
+      this.mutex.release();
     }
   }
 
@@ -527,7 +535,9 @@ export class AuditTrail {
       const redactedError = opts.error !== undefined ? redactor.redact(opts.error) : undefined;
 
       // Step 3: Build record with prevHash
+      // Increment seq optimistically; rolled back on write failure to prevent gaps
       const newSeq = ++this.seq;
+      const savedPrevHash = this.prevHash;
       const now = this.config.now ? this.config.now() : Date.now();
       const record: AuditRecord = {
         seq: newSeq,
@@ -571,7 +581,14 @@ export class AuditTrail {
       const buffer = Buffer.from(line, "utf8");
 
       // Step 8: Robust append with short-write retry
-      await this.robustWrite(buffer);
+      try {
+        await this.robustWrite(buffer);
+      } catch (writeErr) {
+        // Rollback seq to prevent gaps on write failure
+        this.seq = newSeq - 1;
+        this.prevHash = savedPrevHash;
+        throw writeErr;
+      }
 
       // Steps 9-11: Phase-appropriate fsync
       if (opts.phase === "intent" || opts.phase === "result" || opts.phase === "denied") {

@@ -41,9 +41,9 @@ function validateRegexPattern(pattern: string): RegExp {
   if (pattern.length > REGEX_TIMEOUT_CHARS) {
     throw new Error(`Regex pattern too long (${pattern.length} chars, max ${REGEX_TIMEOUT_CHARS})`);
   }
-  // Reject common catastrophic backtracking patterns: nested quantifiers
-  // e.g. (a+)+, (a*)*b, (a|a)+, (.+)+ etc.
-  if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern)) {
+  // Reject catastrophic backtracking patterns: nested quantifiers in capturing
+  // and non-capturing groups, e.g. (a+)+, (?:a+)+, (a*)*b, (a|a)+, (.+)+ etc.
+  if (/(\(|\(\?[^)]*)[^)]*[+*][^)]*\)[+*]/.test(pattern)) {
     throw new Error(`Potentially unsafe regex pattern (nested quantifiers): ${pattern}`);
   }
   return new RegExp(pattern);

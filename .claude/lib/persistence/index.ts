@@ -114,6 +114,21 @@ export {
   MINIMUM_TOTAL_SCORE,
 } from "./learning/quality-gates.js";
 
+// ── Resilient Store ─────────────────────────────────────────
+export {
+  ResilientJsonStore,
+  ResilientStoreFactory,
+  type ResilientStore,
+  type StoreConfig,
+  type ResilientStoreFactoryConfig,
+} from "./resilient-store.js";
+
+// ── Lock Manager ────────────────────────────────────────────
+export { LockManager, type LockOwnership, type LockManagerConfig } from "./lock-manager.js";
+
+// ── Async Mutex ─────────────────────────────────────────────
+export { AsyncMutex, MutexTimeoutError } from "./async-mutex.js";
+
 // ── Rate Limiter ────────────────────────────────────────────
 export {
   RateLimiter,
