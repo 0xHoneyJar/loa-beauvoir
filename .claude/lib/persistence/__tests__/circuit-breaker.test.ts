@@ -99,13 +99,15 @@ describe("CircuitBreaker — backwards compatibility", () => {
     expect(cb.getFailureCount()).toBe(1);
   });
 
-  it("execute() records success on function resolve", async () => {
+  it("execute() records success on function resolve without clearing rolling window", async () => {
     const cb = createCB();
     cb.recordFailure();
     expect(cb.getFailureCount()).toBe(1);
 
     await cb.execute(async () => "ok");
-    expect(cb.getFailureCount()).toBe(0);
+    // In rolling-window model, success in CLOSED state does NOT clear the window.
+    // Failures are evicted only by time (rollingWindowMs) or by HALF_OPEN->CLOSED transition.
+    expect(cb.getFailureCount()).toBe(1);
   });
 
   it("getFailureCount() returns rolling window total", () => {

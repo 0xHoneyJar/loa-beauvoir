@@ -17,7 +17,7 @@
 import type { FileHandle } from "node:fs/promises";
 import { createHash, createHmac } from "node:crypto";
 import { constants } from "node:fs";
-import { open, readFile, mkdir, rename } from "node:fs/promises";
+import { open, readFile, mkdir, rename, writeFile as fsWriteFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { BeauvoirLogger } from "./logger";
 import type { SecretRedactor } from "./secret-redactor";
@@ -242,7 +242,9 @@ export class AuditTrail {
         this.prevHash = lastRecord.hash;
       }
 
-      // If we discarded lines, rewrite the file with only valid records
+      // If we discarded lines, rewrite the file atomically using the same
+      // tmp+fsync+rename+dirsync pattern as ResilientJsonStore.set() to ensure
+      // the recovery path is at least as crash-safe as the happy path.
       const discarded = lines.length - validRecords.length;
       if (discarded > 0) {
         this.config.logger.warn(
@@ -251,9 +253,21 @@ export class AuditTrail {
         const validContent =
           validRecords.map((r) => JSON.stringify(r)).join("\n") +
           (validRecords.length > 0 ? "\n" : "");
-        // Write the clean content before opening with O_APPEND
-        const { writeFile } = await import("node:fs/promises");
-        await writeFile(this.config.path, validContent, "utf8");
+        const tmpPath = `${this.config.path}.${process.pid}.recovery.tmp`;
+        const tmpFd = await open(
+          tmpPath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
+        );
+        try {
+          await tmpFd.writeFile(validContent, "utf8");
+          await tmpFd.sync();
+        } finally {
+          await tmpFd.close();
+        }
+        await rename(tmpPath, this.config.path);
+        const dirFd = await open(dir, constants.O_RDONLY);
+        await dirFd.sync();
+        await dirFd.close();
       }
     }
 

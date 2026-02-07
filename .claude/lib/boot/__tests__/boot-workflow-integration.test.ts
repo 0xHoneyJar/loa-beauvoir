@@ -10,9 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, afterEach } from "vitest";
 import type { DedupState } from "../../safety/idempotency-index.js";
-import type { StepDef } from "../../workflow/engine.js";
+import type { StepDef } from "../../workflow/hardened-executor.js";
 import { IdempotencyIndex } from "../../safety/idempotency-index.js";
-import { WorkflowEngine } from "../../workflow/engine.js";
+import { HardenedExecutor } from "../../workflow/hardened-executor.js";
 import { boot } from "../orchestrator.js";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -60,11 +60,11 @@ describe("Boot -> Workflow -> Audit Integration", () => {
       now,
     });
 
-    // 3. Create WorkflowEngine with real services
+    // 3. Create HardenedExecutor with real services
     const executorResult = { pr_url: "https://github.com/test/repo/pull/42" };
     const executor = async (_step: StepDef) => executorResult;
 
-    const engine = new WorkflowEngine(
+    const engine = new HardenedExecutor(
       {
         auditTrail: services.auditTrail,
         circuitBreaker: services.circuitBreaker,
@@ -145,7 +145,7 @@ describe("Boot -> Workflow -> Audit Integration", () => {
     const executor = async (_step: StepDef) => ({ data: "ok" });
 
     // Wire engine in degraded mode (simulating a P1 failure scenario)
-    const engine = new WorkflowEngine(
+    const engine = new HardenedExecutor(
       {
         auditTrail: services.auditTrail,
         operatingMode: "degraded",

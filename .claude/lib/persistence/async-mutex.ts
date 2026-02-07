@@ -21,12 +21,16 @@ export class AsyncMutex {
   private locked = false;
   private acquiredAt = 0;
   private leaseTimer?: NodeJS.Timeout;
+  private readonly warnFn: (msg: string) => void;
 
   constructor(
     private readonly timeoutMs = 30000,
     private readonly maxHoldMs = 60000,
     private readonly now: () => number = Date.now,
-  ) {}
+    warn?: (msg: string) => void,
+  ) {
+    this.warnFn = warn ?? ((msg: string) => console.warn(msg));
+  }
 
   async acquire(timeoutMs?: number): Promise<void> {
     const timeout = timeoutMs ?? this.timeoutMs;
@@ -77,7 +81,7 @@ export class AsyncMutex {
 
   private startLeaseTimer(): void {
     this.leaseTimer = setTimeout(() => {
-      console.warn(`AsyncMutex: lease expired after ${this.maxHoldMs}ms, auto-releasing`);
+      this.warnFn(`AsyncMutex: lease expired after ${this.maxHoldMs}ms, auto-releasing`);
       this.release();
     }, this.maxHoldMs);
     this.leaseTimer.unref();

@@ -274,13 +274,10 @@ export class CircuitBreaker {
         this.failureWindow = [];
         this.halfOpenSuccesses = 0;
       }
-    } else {
-      // In the enhanced model, success does not clear the rolling window.
-      // It only matters when in HALF_OPEN.
-      // For backwards compat with getFailureCount() after recordSuccess() in CLOSED,
-      // we clear the window (legacy behavior: consecutiveFailures = 0 on success).
-      this.failureWindow = [];
     }
+    // In CLOSED state, let the rolling window eviction timer handle stale records
+    // naturally. Clearing the window on every success defeats the rolling-window
+    // model — a pattern of alternating success/failure would never trip the breaker.
   }
 
   /**

@@ -1,5 +1,5 @@
 /**
- * Tests for WorkflowEngine — 5-step durable execution ordering.
+ * Tests for HardenedExecutor — 5-step durable single-step execution.
  *
  * TASK-3.6: Workflow Engine Integration tests.
  */
@@ -7,15 +7,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PersistenceError } from "../../persistence/types.js";
 import {
-  WorkflowEngine,
+  HardenedExecutor,
   WorkflowError,
   getStrategy,
   generateDedupKey,
   type StepDef,
-  type WorkflowEngineConfig,
+  type HardenedExecutorConfig,
   type StepExecutor,
   type IdempotencyIndex,
-} from "../engine.js";
+} from "../hardened-executor.js";
 
 // ── Mock Factories ───────────────────────────────────────────
 
@@ -72,7 +72,7 @@ function makeStep(overrides?: Partial<StepDef>): StepDef {
 
 // ── Tests ────────────────────────────────────────────────────
 
-describe("WorkflowEngine", () => {
+describe("HardenedExecutor", () => {
   let auditTrail: ReturnType<typeof createMockAuditTrail>;
   let dedupIndex: ReturnType<typeof createMockDedupIndex>;
   let circuitBreaker: ReturnType<typeof createMockCircuitBreaker>;
@@ -87,12 +87,12 @@ describe("WorkflowEngine", () => {
     executor = vi.fn().mockResolvedValue({ pr_url: "https://github.com/owner/repo/pull/123" });
   });
 
-  function createEngine(overrides?: Partial<WorkflowEngineConfig>): WorkflowEngine {
-    return new WorkflowEngine(
+  function createEngine(overrides?: Partial<HardenedExecutorConfig>): HardenedExecutor {
+    return new HardenedExecutor(
       {
-        auditTrail: auditTrail as unknown as WorkflowEngineConfig["auditTrail"],
-        circuitBreaker: circuitBreaker as unknown as WorkflowEngineConfig["circuitBreaker"],
-        rateLimiter: rateLimiter as unknown as WorkflowEngineConfig["rateLimiter"],
+        auditTrail: auditTrail as unknown as HardenedExecutorConfig["auditTrail"],
+        circuitBreaker: circuitBreaker as unknown as HardenedExecutorConfig["circuitBreaker"],
+        rateLimiter: rateLimiter as unknown as HardenedExecutorConfig["rateLimiter"],
         dedupIndex,
         operatingMode: "autonomous",
         ...overrides,

@@ -61,13 +61,15 @@ export interface BootResult {
 export interface ServicesBag {
   redactor: SecretRedactor;
   logger: BeauvoirLogger;
-  auditTrail: AuditTrail;
+  /** May be undefined in dev mode if P0 audit trail init failed. */
+  auditTrail?: AuditTrail;
   store?: ResilientStoreFactory;
   circuitBreaker?: CircuitBreaker;
   rateLimiter?: RateLimiter;
   dedupIndex?: unknown;
   toolValidator?: ToolValidator;
-  lockManager: LockManager;
+  /** May be undefined in dev mode if P0 lock manager init failed. */
+  lockManager?: LockManager;
 }
 
 /**
@@ -375,16 +377,19 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems,
   };
 
+  // In dev mode, P0 subsystems may have failed. Provide no-op fallbacks for
+  // redactor/logger to avoid "Cannot read properties of undefined" errors.
+  // auditTrail and lockManager are optional in ServicesBag for this reason.
   const services: ServicesBag = {
-    redactor: redactor!,
-    logger: logger!,
-    auditTrail: auditTrail!,
+    redactor: redactor ?? new SecretRedactor([]),
+    logger: logger ?? createLogger(redactor ?? new SecretRedactor([]), { level: "info" }),
+    auditTrail,
     store: storeFactory,
     circuitBreaker,
     rateLimiter,
     dedupIndex,
     toolValidator,
-    lockManager: lockManager!,
+    lockManager,
   };
 
   const shutdown = async (): Promise<void> => {

@@ -41,12 +41,15 @@ export interface IdempotencyIndexConfig {
   store: ResilientStore<DedupState>;
   auditQuery?: AuditQueryFn;
   ttlMs?: number;
+  /** Maximum number of entries before FIFO eviction kicks in. Default: 10000 */
+  maxEntries?: number;
   now?: () => number;
 }
 
 // -- Constants ---------------------------------------------------
 
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEFAULT_MAX_ENTRIES = 10_000;
 const SCHEMA_VERSION = 1;
 const HASH_HEX_LENGTH = 16;
 
@@ -56,6 +59,7 @@ export class IdempotencyIndex {
   private readonly store: ResilientStore<DedupState>;
   private readonly auditQuery?: AuditQueryFn;
   private readonly ttlMs: number;
+  private readonly maxEntries: number;
   private readonly now: () => number;
 
   private state: DedupState | null = null;
@@ -64,6 +68,7 @@ export class IdempotencyIndex {
     this.store = config.store;
     this.auditQuery = config.auditQuery;
     this.ttlMs = config.ttlMs ?? DEFAULT_TTL_MS;
+    this.maxEntries = config.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.now = config.now ?? Date.now;
   }
 
@@ -110,6 +115,19 @@ export class IdempotencyIndex {
       attempts: 1,
     };
     state.entries[key] = entry;
+
+    // Proactive FIFO cap: evict oldest entries if we exceed maxEntries
+    const keys = Object.keys(state.entries);
+    if (keys.length > this.maxEntries) {
+      const sorted = Object.entries(state.entries).sort(
+        ([, a], [, b]) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      const excess = sorted.length - this.maxEntries;
+      for (let i = 0; i < excess; i++) {
+        delete state.entries[sorted[i][0]];
+      }
+    }
+
     await this.persist();
     return entry;
   }
@@ -149,17 +167,32 @@ export class IdempotencyIndex {
   }
 
   /**
-   * Remove entries older than ttlMs. Returns count of evicted entries.
+   * Remove entries older than ttlMs and enforce FIFO max entries cap.
+   * Returns count of evicted entries.
    */
   async evict(): Promise<number> {
     const state = await this.ensureLoaded();
     const cutoff = this.now() - this.ttlMs;
     let evicted = 0;
 
+    // Phase 1: TTL-based eviction
     for (const [key, entry] of Object.entries(state.entries)) {
       const createdMs = new Date(entry.createdAt).getTime();
       if (createdMs < cutoff) {
         delete state.entries[key];
+        evicted++;
+      }
+    }
+
+    // Phase 2: FIFO cap — evict oldest entries if count exceeds maxEntries
+    const entries = Object.entries(state.entries);
+    if (entries.length > this.maxEntries) {
+      const sorted = entries.sort(
+        ([, a], [, b]) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      const excess = sorted.length - this.maxEntries;
+      for (let i = 0; i < excess; i++) {
+        delete state.entries[sorted[i][0]];
         evicted++;
       }
     }
