@@ -18,9 +18,14 @@ export {
 // ── Circuit Breaker ──────────────────────────────────────────
 export {
   CircuitBreaker,
+  classifyGitHubFailure,
   type CircuitBreakerState,
   type CircuitBreakerConfig,
+  type EnhancedCircuitBreakerConfig,
   type CircuitBreakerStateChangeCallback,
+  type FailureClass,
+  type FailureRecord,
+  type OperationContext,
 } from "./circuit-breaker.js";
 
 // ── WAL ──────────────────────────────────────────────────────
@@ -108,6 +113,14 @@ export {
   GATE_THRESHOLDS,
   MINIMUM_TOTAL_SCORE,
 } from "./learning/quality-gates.js";
+
+// ── Rate Limiter ────────────────────────────────────────────
+export {
+  RateLimiter,
+  type TokenBucket,
+  type RateLimiterConfig,
+  type ConsumeResult,
+} from "./rate-limiter.js";
 
 // ── Identity ─────────────────────────────────────────────────
 export {
