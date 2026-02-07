@@ -1,0 +1,77 @@
+name: bridgebuilder-review
+description: "Bridgebuilder PR review — 9-step pipeline with FAANG analogies, teachable moments, and structured output"
+trigger:
+  type: cron
+  schedule: "*/30 * * * *"
+steps:
+  - id: orient
+    skill: bridgebuilder
+    gate: auto
+    timeout_minutes: 5
+    on_failure: abort
+  - id: ground
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+    gate: auto
+    timeout_minutes: 15
+    on_failure: abort
+  - id: verify
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+      file_contents: steps.ground.file_contents
+    gate: auto
+    timeout_minutes: 10
+    on_failure: skip
+  - id: audit
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+      file_contents: steps.ground.file_contents
+    gate: auto
+    timeout_minutes: 15
+    on_failure: abort
+  - id: review
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+      file_contents: steps.ground.file_contents
+      security_findings: steps.audit.findings
+    gate: auto
+    timeout_minutes: 15
+    on_failure: abort
+  - id: educate
+    skill: bridgebuilder
+    input:
+      findings: steps.review.findings
+      security_findings: steps.audit.findings
+    gate: auto
+    timeout_minutes: 10
+    on_failure: skip
+  - id: document
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+      findings: steps.educate.findings
+    gate: auto
+    timeout_minutes: 5
+    on_failure: skip
+  - id: drift
+    skill: bridgebuilder
+    input:
+      pr_context: steps.orient.pr_context
+      file_contents: steps.ground.file_contents
+    gate: auto
+    timeout_minutes: 10
+    on_failure: skip
+  - id: comment
+    skill: bridgebuilder
+    input:
+      findings: steps.educate.findings
+      drift_report: steps.drift.drift_report
+      doc_gaps: steps.document.doc_gaps
+      pr_context: steps.orient.pr_context
+    gate: review
+    timeout_minutes: 30
+    on_failure: abort
