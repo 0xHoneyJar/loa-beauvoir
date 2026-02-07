@@ -161,10 +161,8 @@ export class ResilientJsonStore<T> implements ResilientStore<T> {
         } catch (err) {
           this.logger.warn("Failed to write back migrated state", err);
         }
-        // Re-acquire is not needed since we return below
-        if (envelope._writeEpoch > this.writeEpoch) {
-          this.writeEpoch = envelope._writeEpoch;
-        }
+        // writeEpoch already updated by set() if it succeeded;
+        // no assignment here — would race with concurrent writers
         return this.extractState(envelope) as T;
       }
 
@@ -181,25 +179,25 @@ export class ResilientJsonStore<T> implements ResilientStore<T> {
   }
 
   async set(state: T): Promise<void> {
-    // Step 1: Serialize with monotonic epoch
-    this.writeEpoch++;
-    const envelope: Envelope = {
-      _schemaVersion: this.schemaVersion,
-      _writeEpoch: this.writeEpoch,
-      ...(state as Record<string, unknown>),
-    };
-    const json = JSON.stringify(envelope, sortedReplacer, 2);
-
-    // Step 2: Size guard (before touching disk)
-    const bytes = Buffer.byteLength(json, "utf8");
-    if (bytes > this.maxSizeBytes) {
-      this.writeEpoch--;
-      throw new Error(`State size ${bytes} bytes exceeds maximum ${this.maxSizeBytes} bytes`);
-    }
-
-    // Step 3: Acquire mutex
+    // Step 1: Acquire mutex FIRST to ensure epoch monotonicity under concurrency
     await this.mutex.acquire();
     try {
+      // Step 2: Serialize with monotonic epoch (inside mutex to prevent gaps)
+      this.writeEpoch++;
+      const envelope: Envelope = {
+        _schemaVersion: this.schemaVersion,
+        _writeEpoch: this.writeEpoch,
+        ...(state as Record<string, unknown>),
+      };
+      const json = JSON.stringify(envelope, sortedReplacer, 2);
+
+      // Step 3: Size guard (before touching disk)
+      const bytes = Buffer.byteLength(json, "utf8");
+      if (bytes > this.maxSizeBytes) {
+        this.writeEpoch--;
+        throw new Error(`State size ${bytes} bytes exceeds maximum ${this.maxSizeBytes} bytes`);
+      }
+
       const dir = path.dirname(this.storePath);
       await fs.promises.mkdir(dir, { recursive: true });
       // Include writeEpoch as a nonce so a stale tmp from a prior crashed set()

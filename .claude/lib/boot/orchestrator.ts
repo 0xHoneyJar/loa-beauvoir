@@ -151,7 +151,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
       replacement: p.replacement ?? "[REDACTED:" + p.name + "]",
     }));
     redactor = factories?.createRedactor
-      ? factories.createRedactor(config.extraRedactionPatterns)
+      ? factories.createRedactor(patterns)
       : new SecretRedactor(patterns);
     subsystems["redactor"] = "ok";
   } catch (err) {
@@ -197,7 +197,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["auditTrail"] = "ok";
   } catch (err) {
     subsystems["auditTrail"] = "failed";
-    p0Errors.push("AuditTrail init failed: " + errorMessage(err));
+    p0Errors.push("AuditTrail init failed: " + safeErrorMessage(redactor, err));
   }
 
   // Step 3d: ResilientStore factory (P1)
@@ -209,7 +209,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["store"] = "ok";
   } catch (err) {
     subsystems["store"] = "degraded";
-    const msg = "ResilientStoreFactory init failed: " + errorMessage(err);
+    const msg = "ResilientStoreFactory init failed: " + safeErrorMessage(redactor, err);
     warnings.push(msg);
     logger?.warn(msg);
   }
@@ -222,7 +222,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["circuitBreaker"] = "ok";
   } catch (err) {
     subsystems["circuitBreaker"] = "degraded";
-    const msg = "CircuitBreaker init failed: " + errorMessage(err);
+    const msg = "CircuitBreaker init failed: " + safeErrorMessage(redactor, err);
     warnings.push(msg);
     logger?.warn(msg);
   }
@@ -235,7 +235,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["rateLimiter"] = "ok";
   } catch (err) {
     subsystems["rateLimiter"] = "degraded";
-    const msg = "RateLimiter init failed: " + errorMessage(err);
+    const msg = "RateLimiter init failed: " + safeErrorMessage(redactor, err);
     warnings.push(msg);
     logger?.warn(msg);
   }
@@ -253,7 +253,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
       }
     } catch (err) {
       subsystems["dedupIndex"] = "degraded";
-      warnings.push("IdempotencyIndex init failed: " + errorMessage(err));
+      warnings.push("IdempotencyIndex init failed: " + safeErrorMessage(redactor, err));
     }
   } else {
     subsystems["dedupIndex"] = "degraded";
@@ -283,7 +283,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
       subsystems["toolValidator"] = "ok";
     } catch (err) {
       subsystems["toolValidator"] = "failed";
-      p0Errors.push("ToolValidator failed: " + errorMessage(err));
+      p0Errors.push("ToolValidator failed: " + safeErrorMessage(redactor, err));
     }
   } else {
     subsystems["toolValidator"] = "ok";
@@ -309,7 +309,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["lockManager"] = "ok";
   } catch (err) {
     subsystems["lockManager"] = "degraded";
-    const msg = "LockManager init failed: " + errorMessage(err);
+    const msg = "LockManager init failed: " + safeErrorMessage(redactor, err);
     warnings.push(msg);
     logger?.warn(msg);
   }
@@ -351,7 +351,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
         logger?.warn(msg);
       }
     } catch (err) {
-      const msg = "Failed to reconcile pending intents: " + errorMessage(err);
+      const msg = "Failed to reconcile pending intents: " + safeErrorMessage(redactor, err);
       warnings.push(msg);
       logger?.warn(msg);
     }
@@ -368,7 +368,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
         logger?.warn(msg);
       }
     } catch (err) {
-      const msg = "Failed to recover stale locks: " + errorMessage(err);
+      const msg = "Failed to recover stale locks: " + safeErrorMessage(redactor, err);
       warnings.push(msg);
       logger?.warn(msg);
     }
@@ -409,14 +409,14 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
         try {
           rateLimiter.shutdown();
         } catch (err) {
-          logger?.warn("RateLimiter shutdown failed: " + errorMessage(err));
+          logger?.warn("RateLimiter shutdown failed: " + safeErrorMessage(redactor, err));
         }
       }
       if (auditTrail) {
         try {
           await auditTrail.close();
         } catch (err) {
-          logger?.warn("AuditTrail close failed: " + errorMessage(err));
+          logger?.warn("AuditTrail close failed: " + safeErrorMessage(redactor, err));
         }
       }
     };
@@ -456,6 +456,12 @@ function validateConfig(config: BootConfig): void {
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** Redact error messages when redactor is available to prevent secret leakage via BootError/warnings. */
+function safeErrorMessage(redactor: SecretRedactor | undefined, err: unknown): string {
+  const msg = errorMessage(err);
+  return redactor ? redactor.redact(msg) : msg;
 }
 
 export class BootError extends Error {

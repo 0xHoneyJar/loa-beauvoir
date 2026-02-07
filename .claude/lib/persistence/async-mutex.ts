@@ -81,8 +81,14 @@ export class AsyncMutex {
 
   private startLeaseTimer(): void {
     this.leaseTimer = setTimeout(() => {
-      this.warnFn(`AsyncMutex: lease expired after ${this.maxHoldMs}ms, auto-releasing`);
-      this.release();
+      // Warn only — never auto-release, as it would break mutual exclusion
+      // and corrupt crash-safe protocols (audit trail, resilient store).
+      this.warnFn(
+        `AsyncMutex: lock held for ${this.holdDuration()}ms (maxHoldMs=${this.maxHoldMs}ms). ` +
+          `Not auto-releasing to preserve safety.`,
+      );
+      // Re-arm to continue surfacing the issue
+      this.startLeaseTimer();
     }, this.maxHoldMs);
     this.leaseTimer.unref();
   }

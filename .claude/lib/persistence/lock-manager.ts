@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { open, readFile, unlink, readdir, mkdir, fsync } from "node:fs/promises";
+import { open, readFile, unlink, readdir, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import type { BeauvoirLogger } from "../safety/logger.js";
 import { PersistenceError } from "./types.js";
@@ -176,12 +176,15 @@ export class LockManager {
     await this.fsyncDir(dirname(lockPath));
   }
 
-  /** Fsync a directory fd to persist directory entries. */
+  /** Fsync a directory fd to persist directory entries. Tolerates EINVAL/ENOTSUP on overlayfs/NFS. */
   private async fsyncDir(dirPath: string): Promise<void> {
     let dirFd: import("node:fs/promises").FileHandle | undefined;
     try {
       dirFd = await open(dirPath, "r");
-      await dirFd.datasync();
+      await dirFd.sync();
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EINVAL" && code !== "ENOTSUP") throw err;
     } finally {
       await dirFd?.close();
     }

@@ -94,7 +94,16 @@ export class IdempotencyIndex {
     resource: string,
     params: Record<string, unknown>,
   ): string {
-    const canonical = JSON.stringify(params, Object.keys(params).sort());
+    // Recursive sorted-keys serialization for deterministic hashing across runtimes
+    const canonical = JSON.stringify(params, (_k, v) => {
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const obj = v as Record<string, unknown>;
+        const out: Record<string, unknown> = {};
+        for (const key of Object.keys(obj).sort()) out[key] = obj[key];
+        return out;
+      }
+      return v;
+    });
     const hash = createHash("sha256").update(canonical, "utf8").digest("hex");
     const hash16 = hash.substring(0, HASH_HEX_LENGTH);
     return `${action}:${scope}/${resource}:${hash16}`;
@@ -176,6 +185,9 @@ export class IdempotencyIndex {
     const entry = state.entries[key];
     if (!entry) {
       throw new Error(`IdempotencyIndex: no entry found for key "${key}"`);
+    }
+    if (entry.status === "completed") {
+      throw new Error(`IdempotencyIndex: cannot transition completed -> failed for key "${key}"`);
     }
     entry.status = "failed";
     entry.failedAt = new Date(this.now()).toISOString();

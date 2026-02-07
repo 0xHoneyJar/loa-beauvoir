@@ -78,6 +78,8 @@ export class SecretRedactor {
   redact(text: string): string {
     let result = text;
     for (const pattern of this.patterns) {
+      // Defensive reset: global regexes carry stateful lastIndex
+      pattern.pattern.lastIndex = 0;
       if (typeof pattern.replacement === "function") {
         result = result.replace(pattern.pattern, pattern.replacement as any);
       } else {

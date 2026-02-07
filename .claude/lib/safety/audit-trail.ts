@@ -87,19 +87,20 @@ const EXCLUDED_FIELDS = new Set(["hash", "hmac"]);
  * SHAs in params) are preserved.
  */
 function canonicalize(record: AuditRecord): string {
-  let isRoot = true;
-  return JSON.stringify(record, (_key, value) => {
+  return JSON.stringify(record, (key, value) => {
     // For non-object values, return as-is
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    if (value === null || typeof value !== "object") {
       return value;
     }
+    // Preserve arrays but let their contained objects be sorted by the replacer
+    if (Array.isArray(value)) return value;
     const sorted: Record<string, unknown> = {};
-    const keys = Object.keys(value).sort();
-    const excludeAtThisLevel = isRoot;
-    isRoot = false;
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    // key === "" reliably detects the root wrapper object in JSON.stringify
+    const excludeAtThisLevel = key === "";
     for (const k of keys) {
       if (excludeAtThisLevel && EXCLUDED_FIELDS.has(k)) continue;
-      sorted[k] = value[k];
+      sorted[k] = (value as Record<string, unknown>)[k];
     }
     return sorted;
   });
@@ -181,7 +182,7 @@ export class AuditTrail {
         } catch {
           parseErrors++;
           this.config.logger.warn("Discarding corrupt audit line during recovery", {
-            line: line.substring(0, 100),
+            line: this.config.redactor.redact(line.substring(0, 100)),
           });
           break;
         }
@@ -267,9 +268,20 @@ export class AuditTrail {
           await tmpFd.close();
         }
         await rename(tmpPath, this.config.path);
-        const dirFd = await open(dir, constants.O_RDONLY);
-        await dirFd.sync();
-        await dirFd.close();
+        // Fsync directory — tolerate EINVAL/ENOTSUP on overlayfs/NFS/CI
+        try {
+          const dirFd = await open(dir, constants.O_RDONLY);
+          try {
+            await dirFd.sync();
+          } catch (fsyncErr: unknown) {
+            const code = (fsyncErr as NodeJS.ErrnoException).code;
+            if (code !== "EINVAL" && code !== "ENOTSUP") throw fsyncErr;
+          } finally {
+            await dirFd.close();
+          }
+        } catch (dirErr: unknown) {
+          this.config.logger.warn("Directory fsync failed during recovery", dirErr);
+        }
       }
     }
 
@@ -679,17 +691,28 @@ export class AuditTrail {
     await this.fd.close();
     this.fd = null;
 
-    // Generate filesystem-safe timestamp for archive name
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    // Generate filesystem-safe timestamp for archive name (use injectable clock)
+    const rotateNow = this.config.now ? this.config.now() : Date.now();
+    const timestamp = new Date(rotateNow).toISOString().replace(/[:.]/g, "-");
     const archivePath = `${this.config.path}.${timestamp}.jsonl`;
 
     // Rename current file to archive
     await rename(this.config.path, archivePath);
 
-    // Fsync parent directory to persist the rename
-    const dirFd = await open(dirname(this.config.path), constants.O_RDONLY);
-    await dirFd.sync();
-    await dirFd.close();
+    // Fsync parent directory to persist the rename — tolerate EINVAL/ENOTSUP on overlayfs/NFS/CI
+    try {
+      const dirFd = await open(dirname(this.config.path), constants.O_RDONLY);
+      try {
+        await dirFd.sync();
+      } catch (fsyncErr: unknown) {
+        const code = (fsyncErr as NodeJS.ErrnoException).code;
+        if (code !== "EINVAL" && code !== "ENOTSUP") throw fsyncErr;
+      } finally {
+        await dirFd.close();
+      }
+    } catch {
+      /* non-fatal during rotation */
+    }
 
     // Reset chain state for fresh file
     this.prevHash = GENESIS_HASH;
