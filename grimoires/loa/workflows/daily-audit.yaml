@@ -1,0 +1,18 @@
+name: daily-audit
+description: "Daily code audit — create issue with findings"
+trigger:
+  type: cron
+  schedule: "0 3 * * *"
+steps:
+  - id: audit
+    skill: audit
+    gate: auto
+    timeout_minutes: 20
+    on_failure: abort
+  - id: report
+    skill: create-issue
+    input:
+      findings: steps.audit.findings
+    gate: auto
+    timeout_minutes: 5
+    on_failure: skip
