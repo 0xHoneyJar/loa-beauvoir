@@ -33,6 +33,7 @@ function createIndex(
     store?: MockStore<DedupState>;
     auditQuery?: AuditQueryFn;
     ttlMs?: number;
+    maxEntries?: number;
     now?: () => number;
   } = {},
 ) {
@@ -42,6 +43,7 @@ function createIndex(
       store,
       auditQuery: overrides.auditQuery,
       ttlMs: overrides.ttlMs,
+      maxEntries: overrides.maxEntries,
       now: overrides.now ?? (() => FIXED_NOW),
     }),
     store,
@@ -297,6 +299,64 @@ describe("IdempotencyIndex", () => {
       const { index } = createIndex();
       const pending = await index.reconcilePending();
       expect(pending).toHaveLength(0);
+    });
+  });
+
+  describe("FIFO max entries cap", () => {
+    it("markPending evicts oldest entries when maxEntries exceeded", async () => {
+      let currentTime = FIXED_NOW;
+      const { index, store } = createIndex({
+        maxEntries: 3,
+        now: () => currentTime,
+      });
+
+      // Add 3 entries at sequential times
+      await index.markPending("a:s/r:0000000000000001", 1, "safe_retry");
+      currentTime += 1000;
+      await index.markPending("b:s/r:0000000000000002", 2, "safe_retry");
+      currentTime += 1000;
+      await index.markPending("c:s/r:0000000000000003", 3, "safe_retry");
+
+      // All 3 should exist
+      expect(await index.check("a:s/r:0000000000000001")).not.toBeNull();
+      expect(await index.check("b:s/r:0000000000000002")).not.toBeNull();
+      expect(await index.check("c:s/r:0000000000000003")).not.toBeNull();
+
+      // Add a 4th — oldest (a) should be evicted
+      currentTime += 1000;
+      await index.markPending("d:s/r:0000000000000004", 4, "safe_retry");
+
+      expect(await index.check("a:s/r:0000000000000001")).toBeNull();
+      expect(await index.check("b:s/r:0000000000000002")).not.toBeNull();
+      expect(await index.check("c:s/r:0000000000000003")).not.toBeNull();
+      expect(await index.check("d:s/r:0000000000000004")).not.toBeNull();
+    });
+
+    it("evict() respects FIFO cap after TTL eviction", async () => {
+      let currentTime = FIXED_NOW;
+      const { index } = createIndex({
+        maxEntries: 2,
+        ttlMs: 5000,
+        now: () => currentTime,
+      });
+
+      // Add 2 entries within cap (no FIFO eviction needed)
+      await index.markPending("b:s/r:0000000000000002", 2, "safe_retry");
+      currentTime += 100;
+      await index.markPending("c:s/r:0000000000000003", 3, "safe_retry");
+
+      // Both should exist
+      expect(await index.check("b:s/r:0000000000000002")).not.toBeNull();
+      expect(await index.check("c:s/r:0000000000000003")).not.toBeNull();
+
+      // Advance time past TTL for "b" (created at FIXED_NOW) but not "c" (created at FIXED_NOW+100)
+      currentTime = FIXED_NOW + 5050;
+      const evicted = await index.evict();
+
+      // "b" evicted by TTL, "c" still within TTL
+      expect(evicted).toBe(1);
+      expect(await index.check("b:s/r:0000000000000002")).toBeNull();
+      expect(await index.check("c:s/r:0000000000000003")).not.toBeNull();
     });
   });
 

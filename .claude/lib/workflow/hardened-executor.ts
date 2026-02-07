@@ -30,7 +30,6 @@ export interface StepDef {
   resource: string;
   capability: "read" | "write";
   input?: Record<string, unknown>;
-  timeoutMs?: number;
 }
 
 export interface StepResult {
@@ -56,7 +55,8 @@ export interface IdempotencyIndex {
 }
 
 export interface HardenedExecutorConfig {
-  auditTrail: AuditTrail;
+  /** Optional in dev mode where P0 audit trail init may have failed. */
+  auditTrail?: AuditTrail;
   circuitBreaker?: CircuitBreaker;
   rateLimiter?: RateLimiter;
   dedupIndex?: IdempotencyIndex;
@@ -153,12 +153,14 @@ export class HardenedExecutor {
 
     // 5. Five-step durable execution
     // 5.1: Record intent + fsync (audit trail)
-    const intentSeq = await auditTrail.recordIntent(
-      step.skill,
-      `${step.scope}/${step.resource}`,
-      step.input ?? {},
-      dedupKey,
-    );
+    const intentSeq = auditTrail
+      ? await auditTrail.recordIntent(
+          step.skill,
+          `${step.scope}/${step.resource}`,
+          step.input ?? {},
+          dedupKey,
+        )
+      : 0;
 
     // 5.2: Mark pending (dedup index)
     if (dedupIndex) {
@@ -171,12 +173,14 @@ export class HardenedExecutor {
       const outputs = circuitBreaker ? await circuitBreaker.execute(executeFn) : await executeFn();
 
       // 5.4: Record result + fsync (audit trail)
-      await auditTrail.recordResult(
-        intentSeq,
-        step.skill,
-        `${step.scope}/${step.resource}`,
-        outputs,
-      );
+      if (auditTrail) {
+        await auditTrail.recordResult(
+          intentSeq,
+          step.skill,
+          `${step.scope}/${step.resource}`,
+          outputs,
+        );
+      }
 
       // 5.5: Mark completed (dedup index)
       if (dedupIndex) {
@@ -185,17 +189,28 @@ export class HardenedExecutor {
 
       return { outputs, status: "completed" };
     } catch (err) {
-      // Error path: recordResult with error + markFailed
+      // Error path: wrap each infrastructure call in its own try/catch
+      // to prevent audit/dedup I/O errors from swallowing the original error.
       const errorMsg = err instanceof Error ? err.message : String(err);
-      await auditTrail.recordResult(
-        intentSeq,
-        step.skill,
-        `${step.scope}/${step.resource}`,
-        null,
-        errorMsg,
-      );
+      if (auditTrail) {
+        try {
+          await auditTrail.recordResult(
+            intentSeq,
+            step.skill,
+            `${step.scope}/${step.resource}`,
+            null,
+            errorMsg,
+          );
+        } catch {
+          // Best-effort: audit trail I/O failure on error path is non-fatal
+        }
+      }
       if (dedupIndex) {
-        await dedupIndex.markFailed(dedupKey, errorMsg);
+        try {
+          await dedupIndex.markFailed(dedupKey, errorMsg);
+        } catch {
+          // Best-effort: dedup index I/O failure on error path is non-fatal
+        }
       }
       return { outputs: {}, status: "failed", previousError: errorMsg };
     }

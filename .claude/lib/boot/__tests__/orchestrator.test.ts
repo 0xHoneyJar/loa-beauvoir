@@ -594,7 +594,8 @@ describe("BootOrchestrator", () => {
       } catch (err) {
         const bootErr = err as BootError;
         expect(bootErr.subsystems["logger"]).toBe("failed");
-        expect(bootErr.subsystems["lockManager"]).toBe("failed");
+        // LockManager is P1 (degraded-ok), so it degrades when logger is unavailable
+        expect(bootErr.subsystems["lockManager"]).toBe("degraded");
       }
     });
   });

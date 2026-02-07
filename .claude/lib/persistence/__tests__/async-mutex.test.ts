@@ -224,6 +224,39 @@ describe("AsyncMutex", () => {
     });
   });
 
+  describe("custom warn callback", () => {
+    it("should call custom warn function on lease expiry instead of console.warn", async () => {
+      vi.useFakeTimers();
+      const customWarn = vi.fn();
+      const warnMutex = new AsyncMutex(30000, 1000, mockNow, customWarn);
+
+      await warnMutex.acquire();
+      expect(warnMutex.isHeld()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1001);
+
+      expect(warnMutex.isHeld()).toBe(false);
+      expect(customWarn).toHaveBeenCalledTimes(1);
+      expect(customWarn).toHaveBeenCalledWith(
+        "AsyncMutex: lease expired after 1000ms, auto-releasing",
+      );
+    });
+
+    it("should not call custom warn if released before lease expires", async () => {
+      vi.useFakeTimers();
+      const customWarn = vi.fn();
+      const warnMutex = new AsyncMutex(30000, 1000, mockNow, customWarn);
+
+      await warnMutex.acquire();
+      await vi.advanceTimersByTimeAsync(500);
+      warnMutex.release();
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(customWarn).not.toHaveBeenCalled();
+    });
+  });
+
   describe("owner tracking", () => {
     it("should track isHeld correctly", async () => {
       expect(mutex.isHeld()).toBe(false);

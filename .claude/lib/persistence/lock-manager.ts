@@ -132,6 +132,12 @@ export class LockManager {
   // ── Private helpers ─────────────────────────────────────────
 
   private lockFilePath(name: string): string {
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+      throw new PersistenceError(
+        "INVALID_LOCK_NAME",
+        `Lock name must match /^[a-zA-Z0-9_-]+$/: "${name}"`,
+      );
+    }
     return join(this.locksDir, `${name}${LOCK_SUFFIX}`);
   }
 
@@ -233,8 +239,20 @@ export class LockManager {
         bootId: ownership.bootId,
       });
 
-      // Retry acquire after removing stale lock
-      await this.writeLockFile(lockPath);
+      // Retry acquire after removing stale lock. Between unlink and writeLockFile,
+      // another process may have created the lock — catch EEXIST and rethrow as
+      // LOCK_CONTENTION instead of a raw fs error.
+      try {
+        await this.writeLockFile(lockPath);
+      } catch (writeErr: unknown) {
+        if (isEExist(writeErr)) {
+          throw new PersistenceError(
+            "LOCK_CONTENTION",
+            `Lock "${name}" contention: another process acquired the lock during stale recovery`,
+          );
+        }
+        throw writeErr;
+      }
       this.logger.info(`Lock acquired (after stale recovery): ${name}`);
       return;
     }

@@ -29,13 +29,46 @@ export interface ValidationResult {
   warnings: string[];
 }
 
+/** Maximum time in ms to allow regex test execution (safety limit). */
+const REGEX_TIMEOUT_CHARS = 1000;
+
+/**
+ * Validate that a regex pattern string is safe to compile and not pathological.
+ * Rejects patterns with obvious catastrophic backtracking indicators.
+ */
+function validateRegexPattern(pattern: string): RegExp {
+  // Reject patterns that are excessively long
+  if (pattern.length > REGEX_TIMEOUT_CHARS) {
+    throw new Error(`Regex pattern too long (${pattern.length} chars, max ${REGEX_TIMEOUT_CHARS})`);
+  }
+  // Reject common catastrophic backtracking patterns: nested quantifiers
+  // e.g. (a+)+, (a*)*b, (a|a)+, (.+)+ etc.
+  if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern)) {
+    throw new Error(`Potentially unsafe regex pattern (nested quantifiers): ${pattern}`);
+  }
+  return new RegExp(pattern);
+}
+
 export class ToolValidator {
   private registry: Map<string, ToolRegistryEntry>;
+  /** Pre-compiled regex cache for pattern constraints (validated at construction). */
+  private compiledPatterns: Map<string, RegExp> = new Map();
   private policy: ActionPolicyDef;
 
   constructor(registry: ToolRegistryEntry[], policy: ActionPolicyDef) {
     this.registry = new Map(registry.map((entry) => [entry.name, entry]));
     this.policy = policy;
+
+    // Pre-compile and validate all pattern constraints at construction time
+    for (const entry of registry) {
+      if (!entry.constraints) continue;
+      for (const constraint of entry.constraints) {
+        if (constraint.type === "pattern" && typeof constraint.value === "string") {
+          const cacheKey = `${entry.name}:${constraint.param}`;
+          this.compiledPatterns.set(cacheKey, validateRegexPattern(constraint.value));
+        }
+      }
+    }
   }
 
   /**
@@ -92,7 +125,9 @@ export class ToolValidator {
           break;
 
         case "pattern": {
-          const regex = new RegExp(constraint.value as string);
+          const cacheKey = `${toolName}:${constraint.param}`;
+          const regex =
+            this.compiledPatterns.get(cacheKey) ?? validateRegexPattern(constraint.value as string);
           if (typeof actual !== "string" || !regex.test(actual)) {
             violations.push(
               `${constraint.param} must match pattern ${constraint.value}, got ${JSON.stringify(actual)}`,

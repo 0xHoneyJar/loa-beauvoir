@@ -96,9 +96,10 @@ async function listSiblings(
 }
 
 function globTmpFiles(storePath: string): Promise<string[]> {
+  // Matches both old format (.{pid}.tmp) and new format (.{pid}.{epoch}.tmp)
   return listSiblings(
     storePath,
-    (e, base) => e.startsWith(`${base}.`) && e.endsWith(".tmp") && /\.\d+\.tmp$/.test(e),
+    (e, base) => e.startsWith(`${base}.`) && e.endsWith(".tmp") && /\.\d+(\.\d+)?\.tmp$/.test(e),
   );
 }
 
@@ -177,7 +178,9 @@ export class ResilientJsonStore<T> implements ResilientStore<T> {
     try {
       const dir = path.dirname(this.storePath);
       await fs.promises.mkdir(dir, { recursive: true });
-      const tmpPath = `${this.storePath}.${process.pid}.tmp`;
+      // Include writeEpoch as a nonce so a stale tmp from a prior crashed set()
+      // on the same PID doesn't block subsequent writes with EEXIST.
+      const tmpPath = `${this.storePath}.${process.pid}.${this.writeEpoch}.tmp`;
 
       // Step 4: Write tmp (exclusive create) + Step 5: fsync tmp
       const tmpFd = await fs.promises.open(tmpPath, "wx");

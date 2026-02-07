@@ -82,22 +82,24 @@ const EXCLUDED_FIELDS = new Set(["hash", "hmac"]);
 // --- Helpers ---
 
 /**
- * Canonical serialization: JSON.stringify with sorted keys, excluding hash/hmac.
- * Uses a replacer that walks the object, sorting keys at each level.
+ * Canonical serialization: JSON.stringify with sorted keys, excluding hash/hmac
+ * at the root level only. Nested objects with "hash" or "hmac" keys (e.g. commit
+ * SHAs in params) are preserved.
  */
 function canonicalize(record: AuditRecord): string {
+  let isRoot = true;
   return JSON.stringify(record, (_key, value) => {
     // For non-object values, return as-is
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       return value;
     }
-    // Sort keys and exclude hash/hmac at top level
     const sorted: Record<string, unknown> = {};
     const keys = Object.keys(value).sort();
+    const excludeAtThisLevel = isRoot;
+    isRoot = false;
     for (const k of keys) {
-      if (!EXCLUDED_FIELDS.has(k)) {
-        sorted[k] = value[k];
-      }
+      if (excludeAtThisLevel && EXCLUDED_FIELDS.has(k)) continue;
+      sorted[k] = value[k];
     }
     return sorted;
   });

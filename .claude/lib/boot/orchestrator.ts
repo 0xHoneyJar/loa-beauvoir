@@ -260,12 +260,17 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
   }
 
   // Step 4: ToolValidator cross-check (P0)
+  // Merge all action policies into a single allow/deny set, then validate once.
   if (config.mcpToolNames && config.actionPolicy && config.actionPolicy.length > 0) {
     try {
-      const policy = config.actionPolicy[0];
+      const mergedPolicy: ActionPolicyDef = { allow: [], deny: [] };
+      for (const p of config.actionPolicy) {
+        mergedPolicy.allow.push(...p.allow);
+        if (p.deny) mergedPolicy.deny!.push(...p.deny);
+      }
       toolValidator = factories?.createToolValidator
-        ? factories.createToolValidator([] as never[], policy)
-        : new ToolValidator([], policy);
+        ? factories.createToolValidator([] as never[], mergedPolicy)
+        : new ToolValidator([], mergedPolicy);
 
       const validation = toolValidator.validateRegistry(config.mcpToolNames);
       if (!validation.valid) {
@@ -283,7 +288,7 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
     subsystems["toolValidator"] = "ok";
   }
 
-  // LockManager init (needed for steps 5-6)
+  // LockManager init (P1 — degraded-ok, consistent with optional ServicesBag.lockManager)
   try {
     if (!logger) throw new Error("Cannot create lock manager: logger unavailable");
     const bootId = randomUUID();
@@ -302,8 +307,10 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
         });
     subsystems["lockManager"] = "ok";
   } catch (err) {
-    subsystems["lockManager"] = "failed";
-    p0Errors.push("LockManager init failed: " + errorMessage(err));
+    subsystems["lockManager"] = "degraded";
+    const msg = "LockManager init failed: " + errorMessage(err);
+    warnings.push(msg);
+    logger?.warn(msg);
   }
 
   // Determine operating mode
@@ -380,9 +387,10 @@ export async function boot(config: BootConfig, factories?: BootFactories): Promi
   // In dev mode, P0 subsystems may have failed. Provide no-op fallbacks for
   // redactor/logger to avoid "Cannot read properties of undefined" errors.
   // auditTrail and lockManager are optional in ServicesBag for this reason.
+  const safeRedactor = redactor ?? new SecretRedactor([]);
   const services: ServicesBag = {
-    redactor: redactor ?? new SecretRedactor([]),
-    logger: logger ?? createLogger(redactor ?? new SecretRedactor([]), { level: "info" }),
+    redactor: safeRedactor,
+    logger: logger ?? createLogger(safeRedactor, { level: "info" }),
     auditTrail,
     store: storeFactory,
     circuitBreaker,
