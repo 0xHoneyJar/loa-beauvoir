@@ -1,0 +1,57 @@
+name: pr-from-issue
+description: "Full Loa pipeline: issue → PRD → SDD → Sprint → Implement → Review → Audit → Draft PR"
+trigger:
+  type: label
+  label: ready-for-pr
+steps:
+  - id: analyze
+    skill: plan-and-analyze
+    gate: auto
+    timeout_minutes: 15
+    on_failure: abort
+  - id: architect
+    skill: architect
+    input:
+      prd: steps.analyze.prd
+    gate: auto
+    timeout_minutes: 10
+    on_failure: abort
+  - id: sprint
+    skill: sprint-plan
+    input:
+      prd: steps.analyze.prd
+      sdd: steps.architect.sdd
+    gate: auto
+    timeout_minutes: 10
+    on_failure: abort
+  - id: implement
+    skill: implement
+    input:
+      sprint: steps.sprint.sprint_plan
+    gate: auto
+    timeout_minutes: 30
+    on_failure: abort
+  - id: review
+    skill: review-sprint
+    input:
+      implementation: steps.implement.branch
+    gate: auto
+    timeout_minutes: 10
+    on_failure:
+      retry: 1
+  - id: audit
+    skill: audit-sprint
+    input:
+      implementation: steps.implement.branch
+    gate: auto
+    timeout_minutes: 10
+    on_failure: abort
+  - id: create-pr
+    skill: create-pull-request
+    input:
+      branch: steps.implement.branch
+      review: steps.review.report
+      audit: steps.audit.report
+    gate: auto
+    timeout_minutes: 5
+    on_failure: abort
