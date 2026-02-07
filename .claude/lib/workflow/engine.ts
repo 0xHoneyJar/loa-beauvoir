@@ -97,6 +97,51 @@ function resolveInputs(
   return resolved;
 }
 
+// ── Step timeout helper ─────────────────────────────────────
+
+/** Execute a function with a timeout. Rejects with a descriptive error on expiry. */
+async function executeWithTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+  stepId: string,
+): Promise<T> {
+  if (timeoutMs <= 0) return fn();
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Step "${stepId}" timed out after ${Math.round(timeoutMs / 60000)}m`));
+    }, timeoutMs);
+
+    let p: Promise<T>;
+    try {
+      p = fn();
+    } catch (err) {
+      clearTimeout(timer);
+      settled = true;
+      reject(err);
+      return;
+    }
+
+    p.then(
+      (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 // ── WorkflowEngine ──────────────────────────────────────────
 
 export class WorkflowEngine {
@@ -182,15 +227,20 @@ export class WorkflowEngine {
         return run;
       }
 
-      // Execute step
+      // Execute step with per-step timeout enforcement
       const startTime = this.now();
+      const timeoutMs = (stepDef.timeout_minutes ?? 30) * 60 * 1000;
       const maxRetries = typeof stepDef.on_failure === "object" ? stepDef.on_failure.retry : 0;
       let attempt = 0;
       let succeeded = false;
 
       while (attempt <= maxRetries) {
         try {
-          const outputs = await this.executor(stepDef, resolvedInputs);
+          const outputs = await executeWithTimeout(
+            () => this.executor(stepDef, resolvedInputs),
+            timeoutMs,
+            stepDef.id,
+          );
           stepState.status = "completed";
           stepState.outputs = outputs;
           stepState.durationMs = this.now() - startTime;

@@ -10,7 +10,8 @@
  */
 
 import { constants } from "fs";
-import { readFile, writeFile, unlink, access } from "fs/promises";
+import { readFile, writeFile, open, unlink, access, rename } from "fs/promises";
+import { dirname } from "path";
 import type { IStateStore } from "../interfaces";
 
 /**
@@ -22,6 +23,9 @@ export interface JsonStateStoreConfig {
 
   /** Pretty-print JSON (default: true for development) */
   pretty?: boolean;
+
+  /** Use atomic writes: write-to-temp + fsync + rename (default: true) */
+  atomic?: boolean;
 }
 
 /**
@@ -31,7 +35,6 @@ export interface JsonStateStoreConfig {
  * Suitable for simple, single-process state persistence.
  *
  * **Limitations**:
- * - No atomic writes (corruption on crash possible)
  * - No locking (race conditions with multiple processes)
  * - Entire state loaded into memory
  *
@@ -62,10 +65,12 @@ export interface JsonStateStoreConfig {
 export class JsonStateStore<T> implements IStateStore<T> {
   private readonly path: string;
   private readonly pretty: boolean;
+  private readonly atomic: boolean;
 
   constructor(config: JsonStateStoreConfig) {
     this.path = config.path;
     this.pretty = config.pretty ?? true;
+    this.atomic = config.atomic ?? true;
   }
 
   /**
@@ -82,11 +87,37 @@ export class JsonStateStore<T> implements IStateStore<T> {
   }
 
   /**
-   * Set state
+   * Set state (atomic by default: write-to-temp → fsync → rename)
    */
   async set(state: T): Promise<void> {
     const content = this.pretty ? JSON.stringify(state, null, 2) : JSON.stringify(state);
-    await writeFile(this.path, content, "utf-8");
+
+    if (!this.atomic) {
+      await writeFile(this.path, content, "utf-8");
+      return;
+    }
+
+    // Atomic write: temp file in same directory ensures same filesystem for rename
+    const tmpPath = `${this.path}.${process.pid}.tmp`;
+    const fh = await open(tmpPath, "w");
+    try {
+      await fh.writeFile(content, "utf-8");
+      await fh.datasync();
+      await fh.close();
+      await rename(tmpPath, this.path);
+
+      // Sync directory entry so rename survives power loss
+      const dirHandle = await open(dirname(this.path), "r");
+      try {
+        await dirHandle.sync();
+      } finally {
+        await dirHandle.close().catch(() => {});
+      }
+    } catch (err) {
+      await fh.close().catch(() => {});
+      await unlink(tmpPath).catch(() => {});
+      throw err;
+    }
   }
 
   /**
