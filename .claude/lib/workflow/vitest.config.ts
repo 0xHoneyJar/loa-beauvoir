@@ -1,7 +1,13 @@
 import { defineConfig } from "vitest/config";
+
 export default defineConfig({
   test: {
-    include: [".claude/lib/workflow/__tests__/**/*.test.ts"],
+    testTimeout: 30_000,
+    include: [
+      ".claude/lib/workflow/__tests__/**/*.test.ts",
+      ".claude/lib/workflow/templates/__tests__/**/*.test.ts",
+    ],
+    exclude: ["**/node_modules/**"],
     coverage: {
       include: [".claude/lib/workflow/**/*.ts"],
       exclude: ["**/__tests__/**", "**/vitest.config.ts"],

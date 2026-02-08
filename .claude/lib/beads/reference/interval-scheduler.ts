@@ -20,6 +20,9 @@ export interface IntervalSchedulerConfig {
 
   /** Auto-disable tasks after consecutive failures (default: 3) */
   maxFailures?: number;
+
+  /** Injectable clock for testing (default: Date.now) */
+  now?: () => number;
 }
 
 /**
@@ -52,13 +55,17 @@ export interface IntervalSchedulerConfig {
  */
 export class IntervalScheduler implements IScheduler {
   private tasks: Map<string, SchedulerTask> = new Map();
-  private intervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+  private timers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private nextTick: Map<string, number> = new Map(); // expected next tick timestamp
+  private running: Set<string> = new Set(); // overlap guard
   private readonly verbose: boolean;
   private readonly maxFailures: number;
+  private readonly now: () => number;
 
   constructor(config?: IntervalSchedulerConfig) {
     this.verbose = config?.verbose ?? false;
     this.maxFailures = config?.maxFailures ?? 3;
+    this.now = config?.now ?? (() => Date.now());
   }
 
   /**
@@ -79,7 +86,7 @@ export class IntervalScheduler implements IScheduler {
     this.tasks.set(task.id, fullTask);
 
     if (fullTask.enabled) {
-      this.startInterval(fullTask);
+      this.scheduleNext(fullTask);
     }
 
     if (this.verbose) {
@@ -96,7 +103,7 @@ export class IntervalScheduler implements IScheduler {
 
     task.enabled = true;
     task.failureCount = 0; // Reset failures on re-enable
-    this.startInterval(task);
+    this.scheduleNext(task);
 
     if (this.verbose) {
       console.log(`[scheduler] Enabled task: ${task.name}`);
@@ -111,7 +118,7 @@ export class IntervalScheduler implements IScheduler {
     if (!task.enabled) return;
 
     task.enabled = false;
-    this.stopInterval(taskId);
+    this.stopTimer(taskId);
 
     if (this.verbose) {
       console.log(`[scheduler] Disabled task: ${task.name}`);
@@ -122,7 +129,7 @@ export class IntervalScheduler implements IScheduler {
    * Unregister a task
    */
   async unregister(taskId: string): Promise<void> {
-    this.stopInterval(taskId);
+    this.stopTimer(taskId);
     this.tasks.delete(taskId);
 
     if (this.verbose) {
@@ -149,8 +156,8 @@ export class IntervalScheduler implements IScheduler {
    * Shutdown scheduler and all tasks
    */
   async shutdown(): Promise<void> {
-    for (const taskId of this.intervals.keys()) {
-      this.stopInterval(taskId);
+    for (const taskId of this.timers.keys()) {
+      this.stopTimer(taskId);
     }
     this.tasks.clear();
 
@@ -171,31 +178,74 @@ export class IntervalScheduler implements IScheduler {
     return task;
   }
 
-  private startInterval(task: SchedulerTask): void {
-    if (this.intervals.has(task.id)) {
-      this.stopInterval(task.id);
+  /**
+   * Schedule the next tick using setTimeout with drift correction.
+   * Each tick recalculates delay relative to the expected timestamp,
+   * preventing cumulative drift from execution time or event loop delays.
+   */
+  private scheduleNext(task: SchedulerTask, expected?: number): void {
+    if (!task.enabled || !this.tasks.has(task.id)) return;
+
+    if (this.timers.has(task.id)) {
+      this.stopTimer(task.id);
     }
 
-    const interval = setInterval(() => {
-      this.executeTask(task).catch((e) => {
-        console.error(`[scheduler] Unhandled error in ${task.id}:`, e);
-      });
-    }, task.intervalMs);
+    const nextExpected = expected ?? this.now() + task.intervalMs;
+    this.nextTick.set(task.id, nextExpected);
 
-    this.intervals.set(task.id, interval);
+    const delay = Math.max(0, nextExpected - this.now());
+
+    const timer = setTimeout(() => {
+      this.timers.delete(task.id);
+
+      if (!task.enabled || !this.tasks.has(task.id)) {
+        this.nextTick.delete(task.id);
+        return;
+      }
+
+      const firedAt = this.now();
+      const drift = firedAt - nextExpected;
+      if (this.verbose && drift > task.intervalMs * 0.1) {
+        console.warn(
+          `[scheduler] Task ${task.name} drifted ${drift}ms, correcting next tick by -${drift}ms`,
+        );
+      }
+
+      this.executeTask(task)
+        .catch((e) => {
+          console.error(`[scheduler] Unhandled error in ${task.id}:`, e);
+        })
+        .finally(() => {
+          if (task.enabled && this.tasks.has(task.id)) {
+            this.scheduleNext(task, nextExpected + task.intervalMs);
+          }
+        });
+    }, delay);
+
+    this.timers.set(task.id, timer);
   }
 
-  private stopInterval(taskId: string): void {
-    const interval = this.intervals.get(taskId);
-    if (interval) {
-      clearInterval(interval);
-      this.intervals.delete(taskId);
+  private stopTimer(taskId: string): void {
+    const timer = this.timers.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(taskId);
     }
+    this.nextTick.delete(taskId);
   }
 
   private async executeTask(task: SchedulerTask): Promise<void> {
     if (!task.enabled) return;
+    if (this.running.has(task.id)) {
+      if (this.verbose) {
+        console.warn(
+          `[scheduler] Task ${task.name} is already running; skipping overlapping execution`,
+        );
+      }
+      return;
+    }
 
+    this.running.add(task.id);
     try {
       await task.handler();
 
@@ -223,6 +273,8 @@ export class IntervalScheduler implements IScheduler {
         );
         await this.disable(task.id);
       }
+    } finally {
+      this.running.delete(task.id);
     }
   }
 }

@@ -1,0 +1,11 @@
+name: quick-review
+description: "Review open PRs — single step, no workflow engine needed"
+trigger:
+  type: cron
+  schedule: "*/30 * * * *"
+steps:
+  - id: review
+    skill: pr-review
+    gate: auto
+    timeout_minutes: 10
+    on_failure: skip
