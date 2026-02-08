@@ -4,18 +4,23 @@
  * Implements JSONL append-only logging with SHA-256 checksums for each entry.
  * Used for repair actions, recovery events, and security-sensitive operations.
  *
+ * @deprecated Superseded by `.claude/lib/safety/audit-trail.ts` which provides
+ * a production-grade 12-step append protocol with hash-chained JSONL, HMAC support,
+ * crash-safe recovery, and pending-intent-aware log rotation.
+ * Use AuditTrail from `.claude/lib/safety/audit-trail` for new code.
+ *
  * @module deploy/loa-identity/security/audit-logger
  */
 
-import { appendFile, readFile, stat, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { createHash } from 'crypto';
-import { dirname } from 'path';
+import { createHash } from "crypto";
+import { existsSync } from "fs";
+import { appendFile, readFile, stat, mkdir } from "fs/promises";
+import { dirname } from "path";
 
 export interface AuditEntry {
   timestamp: string;
   action: string;
-  actor: 'system' | 'user' | 'automated';
+  actor: "system" | "user" | "automated";
   details: Record<string, unknown>;
   checksum: string;
   previous_checksum: string | null;
@@ -38,7 +43,7 @@ export class AuditLogger {
   private initialized = false;
 
   constructor(logPathOrConfig: string | AuditLoggerConfig) {
-    if (typeof logPathOrConfig === 'string') {
+    if (typeof logPathOrConfig === "string") {
       this.config = {
         logPath: logPathOrConfig,
         maxSizeBytes: 10 * 1024 * 1024, // 10MB default
@@ -78,8 +83,8 @@ export class AuditLogger {
    */
   private async loadLastChecksum(): Promise<void> {
     try {
-      const content = await readFile(this.config.logPath, 'utf-8');
-      const lines = content.trim().split('\n').filter(Boolean);
+      const content = await readFile(this.config.logPath, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
 
       if (lines.length > 0) {
         const lastLine = lines[lines.length - 1];
@@ -87,7 +92,7 @@ export class AuditLogger {
         this.lastChecksum = entry.checksum;
       }
     } catch (e) {
-      console.warn('[audit-logger] Error loading last checksum:', e);
+      console.warn("[audit-logger] Error loading last checksum:", e);
     }
   }
 
@@ -97,7 +102,7 @@ export class AuditLogger {
   async log(
     action: string,
     details: Record<string, unknown>,
-    actor: 'system' | 'user' | 'automated' = 'system'
+    actor: "system" | "user" | "automated" = "system",
   ): Promise<void> {
     if (!this.initialized) {
       await this.initialize();
@@ -128,7 +133,7 @@ export class AuditLogger {
     };
 
     // Append to log file
-    await appendFile(this.config.logPath, JSON.stringify(entry) + '\n', 'utf-8');
+    await appendFile(this.config.logPath, JSON.stringify(entry) + "\n", "utf-8");
 
     // Update last checksum
     this.lastChecksum = checksum;
@@ -137,9 +142,9 @@ export class AuditLogger {
   /**
    * Compute SHA-256 checksum of entry
    */
-  private computeChecksum(entry: Omit<AuditEntry, 'checksum'>): string {
+  private computeChecksum(entry: Omit<AuditEntry, "checksum">): string {
     const content = JSON.stringify(entry, Object.keys(entry).sort());
-    return createHash('sha256').update(content).digest('hex');
+    return createHash("sha256").update(content).digest("hex");
   }
 
   /**
@@ -156,8 +161,8 @@ export class AuditLogger {
       return { valid: true, entries: 0, errors: [] };
     }
 
-    const content = await readFile(this.config.logPath, 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const content = await readFile(this.config.logPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
 
     let previousChecksum: string | null = null;
 
@@ -169,7 +174,7 @@ export class AuditLogger {
         if (entry.previous_checksum !== previousChecksum) {
           errors.push({
             line: i + 1,
-            type: 'chain_broken',
+            type: "chain_broken",
             message: `Chain broken: expected ${previousChecksum}, got ${entry.previous_checksum}`,
           });
         }
@@ -181,7 +186,7 @@ export class AuditLogger {
         if (computed !== checksum) {
           errors.push({
             line: i + 1,
-            type: 'checksum_mismatch',
+            type: "checksum_mismatch",
             message: `Checksum mismatch: expected ${checksum}, computed ${computed}`,
           });
         }
@@ -190,7 +195,7 @@ export class AuditLogger {
       } catch (e) {
         errors.push({
           line: i + 1,
-          type: 'parse_error',
+          type: "parse_error",
           message: `Failed to parse entry: ${e}`,
         });
       }
@@ -213,14 +218,11 @@ export class AuditLogger {
       const stats = await stat(this.config.logPath);
 
       if (stats.size >= this.config.maxSizeBytes) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const archivePath = this.config.logPath.replace(
-          '.log',
-          `-${timestamp}.log`
-        );
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const archivePath = this.config.logPath.replace(".log", `-${timestamp}.log`);
 
         // Rename current log to archive
-        const { rename } = await import('fs/promises');
+        const { rename } = await import("fs/promises");
         await rename(this.config.logPath, archivePath);
 
         // Reset checksum chain for new log
@@ -229,7 +231,7 @@ export class AuditLogger {
         console.log(`[audit-logger] Rotated log to ${archivePath}`);
       }
     } catch (e) {
-      console.warn('[audit-logger] Error checking log size:', e);
+      console.warn("[audit-logger] Error checking log size:", e);
     }
   }
 
@@ -241,8 +243,8 @@ export class AuditLogger {
       return [];
     }
 
-    const content = await readFile(this.config.logPath, 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const content = await readFile(this.config.logPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
 
     const recent = lines.slice(-count);
     return recent.map((line) => JSON.parse(line) as AuditEntry);
@@ -256,8 +258,8 @@ export class AuditLogger {
       return [];
     }
 
-    const content = await readFile(this.config.logPath, 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const content = await readFile(this.config.logPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
 
     const results: AuditEntry[] = [];
     for (const line of lines) {
@@ -280,6 +282,6 @@ export class AuditLogger {
 
 export interface VerificationError {
   line: number;
-  type: 'chain_broken' | 'checksum_mismatch' | 'parse_error';
+  type: "chain_broken" | "checksum_mismatch" | "parse_error";
   message: string;
 }
