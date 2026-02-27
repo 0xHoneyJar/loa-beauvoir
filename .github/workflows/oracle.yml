@@ -1,9 +1,9 @@
 name: Anthropic Oracle
 
 on:
-  schedule:
-    # Run weekly on Mondays at 9:00 UTC
-    - cron: "0 9 * * 1"
+  # schedule disabled — superseded by external orchestration
+  # schedule:
+  #   - cron: "0 9 * * 1"
   workflow_dispatch:
     inputs:
       create_issue:
