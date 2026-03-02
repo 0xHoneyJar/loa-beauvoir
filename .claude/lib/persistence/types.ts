@@ -29,19 +29,18 @@ export type PersistenceErrorCode =
   | "BEADS_SHELL_ESCAPE"
   | "BEADS_WHITELIST_VIOLATION"
   | "DISK_PRESSURE_CRITICAL"
-  | "LOCK_CONTENTION";
+  | "LOCK_CONTENTION"
+  | "INVALID_LOCK_NAME";
 
 // ── Error Class ──────────────────────────────────────────────
 
 export class PersistenceError extends Error {
   readonly code: PersistenceErrorCode;
-  readonly cause?: Error;
 
   constructor(code: PersistenceErrorCode, message: string, cause?: Error) {
-    super(message);
+    super(message, cause ? { cause } : undefined);
     this.name = "PersistenceError";
     this.code = code;
-    this.cause = cause;
   }
 }
 
